@@ -72,7 +72,8 @@ profile 的 `cordis.patch.yml` 按 id 覆盖（整行 config 整体替换，要�
 ## 安装 / 回滚
 
 ```
-dsh plugin --profile desktop add link:D:/游戏开发/项目/工程/dsh-plugins/dsh-exploration-guard
+dsh plugin --profile desktop add dsh-exploration-guard      # 从 npm
+dsh plugin --profile desktop add link:/abs/path/to/dsh-exploration-guard   # 从本地源码
 dsh plugin --profile desktop remove dsh-exploration-guard
 ```
 

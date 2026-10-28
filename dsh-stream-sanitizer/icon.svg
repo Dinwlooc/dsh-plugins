@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Stream Sanitizer">
-  <circle cx="32" cy="32" r="28" fill="#2ea043" opacity="0.12"/>
-  <path d="M14 40c8-12 14 8 22-4s8 4 14-2" fill="none" stroke="#2ea043" stroke-width="4" stroke-linecap="round"/>
-  <path d="M22 24h20" stroke="#8b949e" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 4"/>
-  <circle cx="32" cy="32" r="3.5" fill="#2ea043"/>
-</svg>

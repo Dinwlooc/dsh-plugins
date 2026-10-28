@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "流清洗",
-    "description": "在 llm/stream 瀑布里补齐缺失的 tool-call id，避免 provider 的畸形响应写坏会话日志、把对话锁死。"
-  }
-}

@@ -1,4 +1,0 @@
-# dsh-stream-sanitizer bundle patch — inserts the row into the profile tree.
-- insert:
-    - id: stream-sanitizer
-      name: dsh-stream-sanitizer
