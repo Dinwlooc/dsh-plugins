@@ -1,0 +1,17 @@
+# dsh-request-guard bundle patch — inserts one row; defaults are the evidence-driven ones.
+#
+# Override in your own patch layer:
+#
+#   - id: request-guard
+#     config:
+#       repairRequests: false   # stage B off, stage A only
+#       healOnRetry: false      # stage C off
+#
+- insert:
+    - id: request-guard
+      name: 'dsh-request-guard'
+      config:
+        enabled: true
+        repairRequests: true
+        healOnRetry: true
+        maxHealsPerTurn: 1

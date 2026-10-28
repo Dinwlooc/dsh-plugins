@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "探索熔断",
+    "description": "以 agent-loop 的 step 计数：距上次任务节点推进超过阈值就否决非进度工具，再升级为需要 Owner 授权。阈值可在设置里改。"
+  }
+}

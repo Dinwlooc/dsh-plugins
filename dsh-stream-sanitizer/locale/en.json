@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Stream Sanitizer",
+    "description": "Fills missing tool-call ids inside the llm/stream waterfall so a malformed provider response cannot poison the session log and lock the conversation."
+  }
+}

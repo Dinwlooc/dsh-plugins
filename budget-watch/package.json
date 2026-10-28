@@ -1,0 +1,23 @@
+{
+  "name": "dsh-budget-watch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Warn-only token budget watcher for DeepSeek Harness: model-filled grants, deterministic raw-token accounting, appended threshold warnings, never interrupts.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

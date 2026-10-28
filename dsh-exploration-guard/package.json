@@ -1,0 +1,46 @@
+{
+  "name": "dsh-exploration-guard",
+  "version": "0.3.0",
+    "description": "Progress-gated exploration brake for DeepSeek Harness: counts agent-loop steps since the last task-node advance and denies tool calls when the model keeps exploring without moving the task list or goal.",
+  "author": "Dinwlooc",
+  "keywords": [
+    "dsh-plugin",
+    "exploration",
+    "circuit-breaker",
+    "task-progress",
+    "agent-loop",
+    "guard"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

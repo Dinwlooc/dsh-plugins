@@ -1,0 +1,12 @@
+# dsh-budget-watch bundle 层（原名 nfm-budget-watch，2026-10-28 按社区惯例去 nfm 前缀）。
+#
+# 由 profile 的 dsh.profile.bundles 引用（plugin_manager install_bundle 时自动追加）。
+# 用户可在 profile 自己的 cordis.patch.yml 中覆盖本层的 config。
+
+- insert:
+    - id: budget-watch
+      name: 'dsh-budget-watch'
+      config:
+        enabled: true
+        thresholds: [0.8]
+        remindUnregistered: false

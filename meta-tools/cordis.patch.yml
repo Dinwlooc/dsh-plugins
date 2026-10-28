@@ -1,0 +1,6 @@
+# dsh-meta-tools bundle patch — generic defaults only; this plugin ships NO
+# project-specific configuration. Theme presets (presetTheme/themes) are
+# workspace-specific: configure them in dsh Settings or a user patch layer.
+- insert:
+    - id: dsh-meta-tools
+      name: 'dsh-meta-tools'

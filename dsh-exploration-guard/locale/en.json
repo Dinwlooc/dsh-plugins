@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Exploration Brake",
+    "description": "Counts agent-loop steps since the last task-node advance and denies non-progress tool calls, then requires the Owner. Thresholds are configurable in Settings."
+  }
+}

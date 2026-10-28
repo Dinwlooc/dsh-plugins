@@ -1,0 +1,32 @@
+{
+  "name": "godot-creator-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Godot Creator status display for DeepSeek Harness: session-header Godot AI status chip and Settings integration diagnostics card.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "external": []
+    }
+  }
+}

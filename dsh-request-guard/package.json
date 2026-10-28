@@ -1,0 +1,37 @@
+{
+  "name": "dsh-request-guard",
+  "version": "0.1.1",
+  "description": "Keeps a malformed provider response from wedging or poisoning a DeepSeek Harness session: fills empty tool-call ids on the write side, repairs the outbound message array (nameless calls, orphan/stranded results, missing results, bad arguments), and retries a pairing 400 once.",
+  "author": "Dinwlooc",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "tool-call",
+    "stream",
+    "repair",
+    "session-recovery",
+    "anthropic-adjacency"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./repair": "./lib/repair.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/**/*.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

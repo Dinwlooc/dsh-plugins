@@ -1,0 +1,239 @@
+# godot-creator-ui bundle patch — carries BOTH halves of the Godot Creator mode:
+#
+#   1. row `godot-creator-ui`     — the Host half (status route for the UI halves)
+#   2. row `preset-godot-creator` — the Agent preset declaration
+#   3. row `agent-preset-registry` — the default-preset selection (pre-update behaviour)
+#
+# Carrying the preset HERE (not in the profile patch layer) is deliberate: the DSH
+# 0.2.1-rc.2 update rewrote the profile's cordis.patch.yml on 2026-10-18 and dropped the
+# preset that had been appended there. A bundle patch survives profile rewrites and is
+# installed/updated/removed through plugin_manager; the user's own profile patch still
+# wins over everything declared here.
+#
+# The preset's plugin list mirrors the shipped `standard` preset of this DSH build
+# (app.asar → dsh/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml,
+# DSH 0.2.1-rc.2) with these deviations: the persona rules, two skill roots (Godot +
+# the harness-skills copy at dsh-plugins/harness-skills), the registry selection, `tool-plugin-manager`
+# enabled (owner 2026-10-26: creation-mode permissions, since preset `cordis` cannot mount
+# its delegation tools), and `tool-plugin-market` enabled (owner 2026-10-27: the Host now
+# composes plugin-market from the installation-provided market bundle). After a DSH update,
+# diff this list against that file — a renamed or removed plugin package fails the preset at activation.
+#
+# Host-half behaviour (all discovered, nothing version-pinned):
+#   - Tool-surface policy is MODEL-DEPENDENT (Owner 2026-10-25): strictly appenditive
+#     context models (Deepseek) must not evict tools mid-session — slimming should pin
+#     the surface via preload/core at session start; rolling deferred+search is for
+#     models like glm that tolerate swap-in/out. Choose at session start, not runtime.
+#   - port: read from the Addon's built-in DSH configuration ($DSH_HOME/cordis.patch.yml,
+#     the `mcp-godot-ai` entry's `--port`); 4.3.0 moved it to 8001 and this followed.
+#   - capability: Godot AI 4.3.0+ authenticates its HTTP transport; the token is read
+#     from the addon's published `<capabilityDir>/http-<port>.json`. No file (older
+#     servers) means the request goes out unauthenticated; a 401 forces one re-read.
+#   - MCP session: Godot AI 4.3.0 caps concurrent sessions (32, idle-recycled after 30
+#     minutes), so the host half holds ONE session and reuses it for every probe,
+#     releases it on dispose, and backs off for `sessionLimitBackoffMs` after
+#     MCP_SESSION_LIMIT_REACHED instead of hammering.
+- insert:
+    - id: godot-creator-ui
+      name: godot-creator-ui
+      config:
+        # serverName: godot-ai          # which MCP entry to read the endpoint from
+        # port: 8000                    # set only to pin a port; discovery is preferred
+        # fallbackPort: 8000            # used only when no DSH configuration is found
+        # statusPath: /godot-ai/status  # backend identity endpoint (optional enrichment)
+        # mcpPath: /mcp                 # MCP streamable-HTTP endpoint
+        # sessionTool: session_manage   # rename here if a future addon renames the tool
+        # capabilityDir: <path>         # platform default; "" disables capability lookup
+        # capabilityTtlMs: 60000        # re-read window for the published capability
+        # sessionLimitBackoffMs: 60000  # quiet period after MCP_SESSION_LIMIT_REACHED
+        # dshHome: <path>               # defaults to $DSH_HOME or ~/.dsh
+        cacheTtlMs: 1500
+        timeoutMs: 5000
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+        selectedDefault: godot-creator
+    - id: preset-godot-creator
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: godot-creator
+        name: Godot Creator
+        description: Godot 创作模式：MCP 直连编辑器、按需技能与流程模板；先读后写、独立回读验证。
+        order: 5
+        plugins:
+          # ---- 提示词：只写义务、方法、模式特征与环境事实；不写身份，不复述项目规则 ----
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: "本会话模型：{{model}}。"
+              # 0.2.1-rc.2 起 cwd 不再是注册的提示词变量（注册的只剩 provider/model），
+              # 工作目录改由 working-directory 服务的运行时上下文提供——模板里写 {{cwd}} 会让整轮渲染失败。
+              suffix: |
+                上位规则
+
+                项目 AGENTS.md 与工具约束文档是最高准则：任务类型、预算、上下文卫生、启动模式与工具限制均以其为准。本段不复述其内容；冲突时以项目文件优先。
+
+                职责
+
+                对改动结果负责：先建立事实再写入，交付前独立回读验证。保持设计、实现、验证一致；保护既有场景、脚本与资源，破坏性操作先说明再执行。交付时说明改了什么、验证了什么、还有哪些假设。
+
+                方法
+
+                先读后改：确认编辑器、项目、场景与脚本现状后再动手；工具名与参数以当前 schema 为准，不猜不编。小步闭环：小批量写入后立即读回；失败先定位最早根因，再走完整路径，同类失败不堆叠重试。最短路径：简单任务少探测、少子代理、不重复读同一内容；能用现有模式就不造新机制。
+
+                本模式提供
+
+                MCP 直连运行中的 Godot 编辑器：工具族 mcp__godot-ai__*，常见 {op, params, session_id} 形式，无 run_code/PTC 包装层。按需加载的 Godot 技能（编辑器编排、场景/脚本/UI/资源/动画/音频/多人/导出等）与两个工作流模板（2D 骨架、菜单/HUD/暂停）。状态芯片与诊断卡只观测，不改变工具面。
+
+                插件创作（DSH 侧）：`plugin_manager` 负责安装/启停 bundle，安装用 install_bundle + 包目录绝对路径；`cordis-plugin-development`、`editing-cordis-compositions`、`cordis-composition-reference`、`agent-experience` 四个技能给出包结构、patch 方言与验证方式。创作路径是「工作区里写普通文件 → plugin_manager 安装」：不要手改 profile 的 package.json / cordis.patch.yml，也不要在 profile 目录跑 pnpm。plugin_manager 每次调用都需要审批。
+
+                Godot 环境特征
+
+                会话绑定一个运行中的编辑器（Addon + godot-ai MCP）；场景、脚本、资源由编辑器持有，改动经编辑器接口完成，所有权与 UID 保持清晰。编辑器状态、运行状态与选择都是快照：写入前复查，运行或导入期间不基于陈旧快照下结论。视觉与运行结论需要证据（截图、日志或状态回读）；无证据就说明未验证。未连接编辑器时只给安装/启用步骤，不臆造项目状态。
+
+                项目文件操作分工
+
+                本模式注册 `project_files` 工具：`find` 做类型感知的项目文件检索（默认滤 .uid/.import/.godot 噪声，支持 type 分类与 meta-md 论文检索）；`delete` 把文件移入系统回收站（带根禁闭、保护清单与 res:// 引用拦截）。`filesystem_manage` 没有可靠的删除能力（其 remove 的全项目发现护栏可被无关大资源锁死）——项目文件删除一律用 `project_files delete`；move/rename/reimport/read 用 `filesystem_manage`。
+
+                本段只写义务、方法与环境事实；玩法、架构、代码风格与具体做法由任务、项目规则和技能内容决定。
+
+          # ---- 以下清单逐字取自 DSH 0.2.1-rc.2 的 standard preset，仅 skill-filesystem 一行按本插件所在路径配置 ----
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              # rank-600 fallback root. 2026-10-25 事故记录：曾用 `!!js process.env...||process.cwd()+...`
+              # 做"去耦合"，但 !!js 是 Loader 表达式方言（ctx 服务调用，如 dshHomePath），
+              # process 不可用 → skill-filesystem 挂载抛错，preset 激活链下游全灭
+              # （新会话开不出 subagent、budget-watch 预警失效）。已回退字面量恢复功能；
+              # 解耦待用受支持机制重做（TODO：向 vendor 确认 env/cwd 服务后迁移）。
+              bundledSkillDir: D:/游戏开发/项目/工程/dsh-plugins/godot-creator/skills
+              # 创造模式技能根（owner 2026-10-26）：DSH 自带技能的项目内副本，逐字取自
+              # app.asar 的 @deepseek-ai/dsh-agent-preset/skills（0.2.1-rc.3）。
+              # 用项目副本而非 asar 路径：副本缺失时只少技能，不至于让 preset 激活失败。
+              # 刷新方式见 dsh-plugins/harness-skills/PROVENANCE.md。
+              customSkillDirs:
+                - D:/游戏开发/项目/工程/dsh-plugins/harness-skills
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  # 强制重启线：上下文到 25% 就压缩清场（默认 0.8）。
+                  thresholdRatio: 0.25
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+              # OL1H 呼叫通道（0017 §8）：spawn 型 `subagent`（@deepseek-ai/dsh-subagent）与
+              # `subagent-model-selection-settings` 由 **profile 层全局声明**，此处不得重复
+              # 挂载——service 重复注册会报错。白名单（deepseek-flash 等）也在 profile 层。
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          # 创造模式权限（owner 2026-10-26）：plugin_manager 是本 profile 唯一的插件安装/启停
+          # 通道，cordis-plugin-development 的全部流程都依赖它。desktop profile 恒有
+          # profileContext，故不加 !!js 守卫——该方言在本 bundle 层是否可执行未经证实，
+          # 守卫抛错会让整个 preset 激活失败（新会话开不出来）。
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+          # plugin-market 现由 profile 的 @deepseek-ai/dsh-experimental-plugin-market-bundle
+          # 提供 Host 服务（0.2.1-rc.3，安装自带）；此处挂工具行，不再固定关闭
+          # （Owner 2026-10-27：清理预设里残留的旧插件市场开关）。
+          - id: tool-plugin-market
+            name: '@deepseek-ai/dsh-plugin-market/tools'
+
+# 署名：deepseek-flash ｜2026-10-16 ~ 2026-10-22
+# 修订：deepseek-flash ｜2026-10-26（owner 裁定「为 godot-creator 开放创造插件的权限和工具」：
+#   增加 customSkillDirs=D:/游戏开发/项目/工程/dsh-plugins/harness-skills（DSH 自带技能的项目内副本，
+#   见该目录 PROVENANCE.md）、启用 tool-plugin-manager。起因：本构建里 preset `cordis` 的 spawn
+#   委派实例装不上，`list_subagent_models` 因此注册不了（`.dsh/public/0002-OL1H卡.md` 的跨模型
+#   探路断掉），创造类工作改到 godot-creator 下进行。）

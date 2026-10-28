@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Meta Tools",
+    "description": "Model-facing tools that build and maintain a per-model prompt & knowledge library (.dsh) in any workspace: model-auto routing, guarded writes with revision logs, keyword/body search, and recycle-bin deletes."
+  }
+}

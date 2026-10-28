@@ -1,0 +1,5 @@
+# dsh-exploration-guard bundle patch — inserts the guard row into the profile tree.
+# Install: dsh plugin --profile desktop add link:<abs path of this directory>
+- insert:
+    - id: exploration-guard
+      name: dsh-exploration-guard
