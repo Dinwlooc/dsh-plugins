@@ -11,12 +11,14 @@ can follow two-phase routing and native-file-tool discipline. There is no
 
 ## What it installs (v3)
 
-- `meta_route` — zero-arg inventory call (routable task types, removed tombstones,
-  the calling model's library dir, config paths; ALSO the sole provisioning point:
-  creates the model dir + taskType dirs with the SESSION root), then a routing call
-  with `taskType` that returns must-read **PATHS ONLY** (workspace-relative, with
-  line counts, capped at `routeMaxFiles`) — never inline bodies; the model opens
-  paths with its native read tool (Owner addition 2026-10-27).
+- `meta_route` — zero-arg inventory call (routable task types, the calling model's
+  library dir, knowledge-base entry; ALSO the sole provisioning point: creates the
+  model dir + taskType dirs with the SESSION root). If the project has no task
+  types, it returns setup steps for `meta_tasktype`. The routing call with
+  `taskType` returns must-read **PROMPT/细则 PATHS ONLY** (workspace-relative, with
+  line counts, capped at `routeMaxFiles`) — never inline bodies, and never
+  knowledge papers (`NNNN-*.md`): those are found by `grep` / `project_files find`
+  after routing (Owner 2026-10-29). The model opens paths with its native read tool.
 - `meta_sign`（签发）— the revision recorder. After the model writes/edits a
   meta-layer file with native tools, signing appends `- <ISO> | <model> |
   <revisionBasis> | sha=<8> lines=<n>[ | note]` to the companion `<file>.revlog.md`
@@ -49,7 +51,7 @@ can follow two-phase routing and native-file-tool discipline. There is no
 .dsh/meta/tasktypes.json       PROJECT task-type registry (active/removed; model-maintained)
 .dsh/meta/config.json          issuance config {revlogEntries} (model-editable)
 .dsh/public/meta/              strong-loaded prompts (loaded for EVERY task type)
-.dsh/public/<taskType>/        shared per-task-type files (细则.md = must-read)
+.dsh/public/<taskType>/         shared per-task-type files (细则.md = must-read; NNNN-*.md = search-only)
 .dsh/<系>/<model>/             per-model library (dirs provisioned by meta_route)
 .dsh/<系>/<model>/meta.md      per-model second-level meta (self-maintained)
 ```

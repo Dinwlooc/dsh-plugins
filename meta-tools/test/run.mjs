@@ -233,6 +233,8 @@ await check("meta_route inventory provisions with session root (no registry.json
     assert.equal(inv.modelDir, ".dsh/glm/glm-5.3-flash");
     assert.ok(inv.taskTypes.includes("业务"));
     assert.ok(!inv.taskTypes.includes("协作")); // tombstoned in the earlier test
+    assert.equal(inv.knowledgeBase, ".dsh/public");
+    assert.equal(inv.setup, undefined);
     // Inventory is cold-start output: only what the model needs to start (no tombstones, no internal paths).
     assert.equal(inv.removed, undefined, "no tombstone list in inventory");
     assert.equal(inv.registryPath, undefined);
@@ -248,8 +250,24 @@ await check("meta_route inventory provisions with session root (no registry.json
     assert.ok(noRegistry, "registry.json must be retired");
 });
 
+await check("meta_route inventory with no task types returns setup steps", async () => {
+    const emptyWs = join(tmp, "empty");
+    await mkdir(join(emptyWs, ".dsh", "public"), { recursive: true });
+    const emptyTool = createMetaRouteTool(ctx, normalizeConfig({ root: emptyWs }));
+    const inv = await emptyTool.execute({}, exec);
+    assert.equal(inv.code, "OK");
+    assert.equal(inv.taskTypes.length, 0);
+    assert.ok(inv.setup && inv.setup.steps.join(" ").includes("meta_tasktype"));
+    assert.ok(inv.setup.steps.join(" ").includes("meta_route"));
+    const rendered = emptyTool.output.render({}, inv)[0].text;
+    assert.ok(rendered.includes("setup"), "render must surface the setup path");
+});
+
 await check("meta_route routing returns PATHS ONLY, .dsh-prefixed, no bodies", async () => {
+    await mkdir(join(workspace, ".dsh", "public", "meta"), { recursive: true });
+    await writeFile(join(workspace, ".dsh", "public", "meta", "META策略.md"), "# META 策略\nkeywords: x\n正文", "utf8");
     await writeFile(join(workspace, ".dsh", "public", "业务", "细则.md"), "# 细则\n正文", "utf8");
+    await writeFile(join(workspace, ".dsh", "public", "业务", "0001-paper.md"), "# 0001 论文\nkeywords: x\n正文", "utf8");
     const tool = createMetaRouteTool(ctx.sessionProjections && { sessionProjections: ctx.sessionProjections, get: () => undefined }, cfg);
     const route = await tool.execute({ taskType: "业务" }, exec);
     assert.equal(route.code, "OK");
@@ -261,7 +279,9 @@ await check("meta_route routing returns PATHS ONLY, .dsh-prefixed, no bodies", a
         assert.ok(Number.isInteger(m.lines));
     }
     assert.ok(route.mustRead.some((m) => m.path.endsWith("public/业务/细则.md")));
-    assert.ok(route.mustRead.some((m) => m.path.endsWith("public/meta/分类标准.md") || true));
+    assert.ok(route.mustRead.some((m) => m.path.endsWith("public/meta/META策略.md")));
+    assert.ok(!route.mustRead.some((m) => m.path.endsWith("0001-paper.md")), "knowledge papers must not be preloaded");
+    assert.equal(route.knowledgeBase, ".dsh/public");
     // unknown + tombstoned type
     const unknown = await tool.execute({ taskType: "协作" }, exec);
     assert.equal(unknown.code, "USAGE");

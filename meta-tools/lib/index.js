@@ -77,7 +77,7 @@ const ROUTE_SECTION = {
     order: 3150, // after MCP_SERVERS, before TOOLS_SDK — library guidance sits with tool guidance
     text: [
         "## Meta library (this workspace)",
-        "This workspace keeps a per-model prompt & knowledge library under `.dsh/`. At the start of any new task, call `meta_route` once (no arguments) for the routable task types and your library dir, then call it with your task type to receive must-read file PATHS — open them with your native read tool before working (bodies are never inlined).",
+        "This workspace keeps a per-model prompt & knowledge library under `.dsh/`. At the start of any new task, call `meta_route` once (no arguments) for the routable task types, your library dir, and the knowledge-base entry; if the project has no task types it returns setup steps for `meta_tasktype`. Then call it with your task type to receive must-read PROMPT/细则 paths — open them with your native read tool before working (bodies are never inlined). Knowledge papers are NOT preloaded; after routing, find them under `.dsh/public` with grep or project_files find.",
         "Maintain library files with your native read/write/edit tools; after each write to a meta-layer file, record the revision with `meta_sign` (签发 — timestamp, model and revisionBasis land in the companion .revlog.md, last 8 entries kept; cap in .dsh/meta/config.json). Add/remove project task types with `meta_tasktype` (removed types keep folders but stop routing). Sibling models may share ONE library through `meta_alias` (`.dsh/meta/config.json` modelAliases): routing then uses the identity library while reports and revlog keep the factual model.",
     ].join("\n"),
 };

@@ -6,7 +6,7 @@ DeepSeek Harness 插件集合。每个子目录是一个独立的 DSH bundle，�
 |---|---|---|---|
 | `dsh-request-guard/` | `dsh-request-guard@0.1.1` | 已发布 | 三层请求守卫：写入层补空 tool-call id、请求层修消息数组、错误层配对 400 重试一次 |
 | `dsh-exploration-guard/` | `dsh-exploration-guard@0.3.0` | 已发布 | 按任务进展熔断探索黑洞（不是按重复判据） |
-| `meta-tools/` | `dsh-meta-tools@0.1.0` | 已发布 | 元层路由 / 签发 / 任务类型注册表 / 模型库身份别名 |
+| `meta-tools/` | `dsh-meta-tools@0.2.0` | 已发布 | 元层路由 / 签发 / 任务类型注册表 / 模型库身份别名；知识论文不预载，路由后可检索 |
 | `budget-watch/` | `dsh-budget-watch` | 内部使用 | 只提醒不中断的 token 预算看门狗（专用口径，不发布） |
 | `tools/session-repair/` | — | 工具 | 会话日志诊断与修复脚本（不依赖插件） |
 | `godot-creator/`、`harness-skills/` | — | 内部 | Godot 侧插件与技能包 |
@@ -34,7 +34,7 @@ dsh plugin --profile desktop add link:/abs/path/to/<pkg>
 ```bash
 node dsh-request-guard/test/run.mjs        # 10/10
 node dsh-exploration-guard/test/run.mjs    # 9/9
-node meta-tools/test/run.mjs               # 20/20
+node meta-tools/test/run.mjs               # 21/21
 ```
 
 ## 发布

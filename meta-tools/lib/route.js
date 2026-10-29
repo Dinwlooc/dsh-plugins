@@ -35,7 +35,9 @@ function agentSessionOf(exec) {
     return a;
 }
 
-const CRITERIA = "分类标准.md";
+/** Knowledge papers are NNNN-*.md; they are searched after routing, never preloaded. */
+const PAPER_RE = /^\d{4}-.+\.md$/;
+const KNOWLEDGE_BASE = ".dsh/public";
 
 /** GUI rendering of a route result: content-parts array (harness calls .some on it). */
 function renderRoute(_args, value) {
@@ -46,18 +48,21 @@ function renderRoute(_args, value) {
         ? value.model
         : `${value.model} -> ${value.identity} (alias)`;
     if (!value.mustRead) {
-        return [{ type: "text", text: `meta_route: model=${who} taskTypes=[${value.taskTypes.join(", ")}] library=${value.modelDir}` }];
+        if (value.setup) {
+            return [{ type: "text", text: `meta_route: model=${who} no task types | setup: ${value.setup.steps.join(" → ")} | library=${value.modelDir}` }];
+        }
+        return [{ type: "text", text: `meta_route: model=${who} taskTypes=[${value.taskTypes.join(", ")}] | knowledge=${value.knowledgeBase} (search after taskType) | library=${value.modelDir}` }];
     }
     const files = value.mustRead.map((m) => m.path).join(", ");
     const opt = value.omitted > 0 ? ` (+${value.omitted} beyond cap)` : "";
-    return [{ type: "text", text: `meta_route: ${who}/${value.taskType} must-read ${value.mustRead.length}: ${files}${opt}` }];
+    return [{ type: "text", text: `meta_route: ${who}/${value.taskType} must-read ${value.mustRead.length}: ${files}${opt} | knowledge: search ${value.knowledgeBase}/${value.taskType}` }];
 }
 
 export function createMetaRouteTool(ctx, cfg) {
     return {
         name: "meta_route",
         description:
-            "Meta-layer routing for this workspace's prompt & knowledge library (.dsh). When the session model is aliased (meta_alias / .dsh/meta/config.json modelAliases) routing uses the IDENTITY library and the result reports model -> identity (alias). Call once with no arguments to list the routable task types plus the library dir for THIS model; call again with taskType to receive the must-read file PATHS (workspace-relative, open with your native read tool) for YOUR model (auto-detected). Read the returned files before starting task work.",
+            "Meta-layer routing for this workspace's prompt & knowledge library (.dsh). When the session model is aliased (meta_alias / .dsh/meta/config.json modelAliases) routing uses the IDENTITY library and the result reports model -> identity (alias). Call once with no arguments to list the routable task types, this model's library dir, and the knowledge-base entry (articles are NOT listed; search them after routing). If the project has no task types, the inventory returns setup steps for meta_tasktype. Call again with taskType to receive the must-read PROMPT/细则 file paths (workspace-relative, open with your native read tool); knowledge papers are excluded and should be found with grep/project_files find.",
         parameters: {
             type: "object",
             additionalProperties: false,
@@ -92,17 +97,36 @@ export function createMetaRouteTool(ctx, cfg) {
 
             // Inventory call + sole provisioning point (session root by construction).
             if (args?.taskType === undefined || args.taskType === "") {
-                const reg = await readTaskTypeRegistry(rcfg);
                 try {
                     await mkdir(modelRoot, { recursive: true });
                     for (const t of types) await mkdir(join(modelRoot, t), { recursive: true });
                 } catch { /* best-effort; native writes recreate on demand */ }
-                return {
+                const inventory = {
                     code: "OK",
                     model,
                     ...aliasFields,
                     modelDir,
                     taskTypes: types,
+                    knowledgeBase: KNOWLEDGE_BASE,
+                    knowledgeHint: "knowledge articles are not listed here; after choosing a taskType, find them with grep or project_files find",
+                };
+                if (types.length === 0) {
+                    // Fresh project: the plugin cannot invent a taxonomy. Teach the
+                    // model the minimum sequence, then route again.
+                    return {
+                        ...inventory,
+                        setup: {
+                            hint: "No task types registered for this project.",
+                            steps: [
+                                'meta_tasktype {"action":"register","taskType":"<type>"}',
+                                `create .dsh/public/<type>/细则.md and ${modelDir}/<type>/<model>.md`,
+                                'meta_route {"taskType":"<type>"}',
+                            ],
+                        },
+                    };
+                }
+                return {
+                    ...inventory,
                     nextHint: "call again with taskType=<one of taskTypes> to receive must-read paths",
                 };
             }
@@ -137,11 +161,15 @@ export function createMetaRouteTool(ctx, cfg) {
             ];
             const bodies = [];
             for (const dir of dirs) {
-                for (const name of await listBodies(dir)) bodies.push(join(dir, name));
+                for (const name of await listBodies(dir)) {
+                    // Prompts and 细则 only. Knowledge papers are discovered by search
+                    // after routing (Owner 2026-10-29: the route must not carry the KB).
+                    if (PAPER_RE.test(name)) continue;
+                    bodies.push(join(dir, name));
+                }
             }
-            // Strong-load order: criteria first, then model meta.md, then the rest.
-            const criteriaAbs = join(base, "public", "meta", CRITERIA);
-            bodies.sort((a, b) => (a === criteriaAbs ? -1 : b === criteriaAbs ? 1 : a.localeCompare(b)));
+            // Insertion order is the strong-load order: public/meta prompts, then
+            // the model's meta.md, meta/ methods, type prompt, and shared 细则.
             for (const abs of bodies) {
                 if (!existsSync(abs)) continue;
                 push(abs);
@@ -163,6 +191,8 @@ export function createMetaRouteTool(ctx, cfg) {
                 taskType,
                 mustRead,
                 omitted,
+                knowledgeBase: KNOWLEDGE_BASE,
+                knowledgeHint: `papers under ${KNOWLEDGE_BASE}/${taskType} are not preloaded; search them with grep or project_files find`,
                 hint: "open these paths with your native read tool; bodies are not inlined",
                 budgetFiles: rcfg.routeMaxFiles,
             };

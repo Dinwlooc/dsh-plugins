@@ -1,6 +1,6 @@
 {
   "name": "dsh-meta-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Meta-layer library tools for DeepSeek Harness: route, read/write/search/guard-delete a workspace prompt & knowledge library keyed by model and task type",
   "author": "Dinwlooc",
   "license": "MIT",
