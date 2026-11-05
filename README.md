@@ -7,7 +7,7 @@ DeepSeek Harness 插件集合。每个子目录是一个独立的 DSH bundle，�
 | `dsh-request-guard/` | `dsh-request-guard@0.1.1` | 已发布 | 三层请求守卫：写入层补空 tool-call id、请求层修消息数组、错误层配对 400 重试一次 |
 | `dsh-exploration-guard/` | `dsh-exploration-guard@0.3.0` | 已发布 | 按任务进展熔断探索黑洞（不是按重复判据） |
 | `meta-tools/` | `dsh-meta-tools@0.3.0` | 已发布 | 元层路由 / 签发（项目级开关，关闭不回卸载工具）/ 任务类型注册表 / 模型库身份别名；独立 Meta-tools 配置栏；知识论文不预载，路由后可检索；v3.1 冷启动清单一次给出各类型必读路径 |
-| `budget-watch/` | `dsh-budget-watch` | 内部使用 | 只提醒不中断的 token 预算看门狗（专用口径，不发布） |
+| `budget-watch/` | `@dinwlooc/dsh-budget-watch` | 已发布 npm | 只提醒不中断的 token 预算看门狗（模型填报额度、确定性计数、阈值告警，从不中断） |
 | `tools/session-repair/` | — | 工具 | 会话日志诊断与修复脚本（不依赖插件） |
 | `godot-creator/`、`harness-skills/` | — | 内部 | Godot 侧插件与技能包 |
 

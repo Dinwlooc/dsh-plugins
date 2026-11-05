@@ -1,33 +1,35 @@
 {
-  "name": "dsh-budget-watch",
-  "version": "0.3.0",
-  "private": true,
-  "description": "Warn-only token budget watcher for DeepSeek Harness: model-filled grants, deterministic raw-token accounting, appended threshold warnings, never interrupts.",
-  "type": "module",
-  "main": "./index.js",
-  "exports": {
-    ".": "./index.js",
-    "./client": {
-      "default": "./client.js"
+    "name": "@dinwlooc/dsh-budget-watch",
+    "version": "0.3.0",
+    "description": "Warn-only token budget watcher for DeepSeek Harness: model-filled grants, deterministic raw-token accounting, appended threshold warnings, never interrupts.",
+    "type": "module",
+    "main": "./index.js",
+    "exports": {
+        ".": "./index.js",
+        "./client": {
+            "default": "./client.js"
+        },
+        "./package.json": "./package.json"
     },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "messages.js",
-    "index.js",
-    "cordis.patch.yml",
-    "README.md",
-    "client.js",
-    "settings.js"
-  ],
-  "license": "MIT",
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
+    "files": [
+        "messages.js",
+        "index.js",
+        "cordis.patch.yml",
+        "README.md",
+        "client.js",
+        "settings.js"
+    ],
+    "license": "MIT",
+    "dsh": {
+        "bundle": {
+            "patch": "./cordis.patch.yml"
+        },
+        "client": {
+            "platform": "web",
+            "external": []
+        }
     },
-    "client": {
-      "platform": "web",
-      "external": []
+    "publishConfig": {
+        "access": "public"
     }
-  }
 }

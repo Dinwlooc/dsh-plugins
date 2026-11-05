@@ -1,4 +1,4 @@
-# dsh-budget-watch
+# @dinwlooc/dsh-budget-watch
 
 DSH 的**只提醒、不中断** token 预算看门狗。预算口径（与项目 `AGENTS.md` 一致）：直计费模型计 `billed = 未命中缓存输入 + 输出`，套餐模型计 `quota = input + output + cacheRead + cacheWrite`，两者之和与 `granted` 比较。**输出是给模型的 token 钟，不是账单**：`budget_status` ≤3 行，不回显单价表与账本内部字段。
 
