@@ -20,8 +20,9 @@ export function ratiosFromCost(cost) {
     const output = Number(cost.output);
     if (!(input > 0) || !Number.isFinite(output) || output < 0) return null;
     const read = Number(cost.cache_read);
+    // 两种缺省的取向不同：cache_read 缺失会把缓存读算成免费，属编数，整条丢弃；
+    // cache_write 缺失按 1（等价于旧的「缓存写按 miss 计价」），是有依据的安全默认。
     const write = Number(cost.cache_write);
-    // 没有 cache_read 就无法得出命中档比例：整条丢弃，绝不默认成「缓存免费」。
     if (!Number.isFinite(read) || read < 0) return null;
     return {
         hit: read / input,

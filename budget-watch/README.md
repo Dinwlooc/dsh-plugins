@@ -87,6 +87,7 @@ provider 的 usage 有两种语义并存，旧实现只认包含式，遇到分�
 - **只取比例，不取金额**：从 `https://models.dev/api.json` 读各模型的 input / cache_read / output / cache_write，除以 input 归一成 `hit / miss=1 / out / write`。币种、每百万单位、高峰倍率在相除时全部抵消——这正是折算需要的口径。
 - **优先级**：`config.prices` 明示 > models.dev 比例。配置里写了价就永远以配置为准，不会被远程数据覆盖。
 - **都没有 → 按总量计，不折算**：未知模型（价目表与 models.dev 都查不到）、报价冲突、缺 `cache_read`、结构不符、拉取失败，一律**不折算**，按原始总量进入 quota 口径（与套餐模型同口径）；折算绝不按 flash 比例冒充。冲突条目数可在 `rates.state()` 看到。
+- **quota 口径有三种来源**：套餐模型的全量 token、未知模型/未定价模型的原始总量、以及历史账本里已有的 quota 累积；预算比较只看 `weighted + quota`，三者单位相同、不会重复计入。
 - **展示金额仍是估算**：状态行里的 ¥ 只用于给人看，未知模型按 flash 价估算并标 `attr 0%`；它与折算口径是两件事。
 - **缓存与离线**：比例写 `<home>/budget-watch/rates/rates-cache.json`（独立子目录，避免被账本扫描当成会话账本；默认 TTL 24h，`ratesRefreshHours` 可调）；缓存命中即离线可用。设 `DSH_BUDGET_WATCH_OFFLINE=1` 可完全禁网。
 - **展示金额不变**：面板里的 ¥ 仍按 `config.prices` 计算；本次只改「折算成等效 miss token」的比例口径。

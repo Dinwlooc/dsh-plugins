@@ -1123,6 +1123,12 @@ async function* meterStream(config, options, upstream) {
                             ledger.loop.lastHitTokens = Math.max(0, Number(split.mix.hit) || 0);
                             ledger.loop.lastWeighted = w;
                         }
+                        else {
+                            // 未知模型不折算：清掉上一笔的命中折算值，避免面板显示陈旧的 stepPct。
+                            ledger.loop = ledger.loop || {};
+                            ledger.loop.lastHit = 0;
+                            ledger.loop.lastHitTokens = 0;
+                        }
                     }
                     // 峰值感知：这一次调用花了多少预算单位（与预算比较同一单位）。
                     const spend = split.isPlan ? split.quota : split.billed;
