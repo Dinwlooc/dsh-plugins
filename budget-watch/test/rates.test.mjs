@@ -17,6 +17,7 @@ check('ratios: cache_write 缺省按 miss=1', r1.write === 1);
 check('ratios: 有 cache_write 时取比例', ratiosFromCost({ input: 2, output: 8, cache_read: 0.5, cache_write: 3 }).write === 1.5);
 check('ratios: 缺 input → null', ratiosFromCost({ output: 1 }) === null);
 check('ratios: input=0 → null', ratiosFromCost({ input: 0, output: 1 }) === null);
+check('ratios: 缺 cache_read → null（不把缓存当免费）', ratiosFromCost({ input: 1, output: 4 }) === null);
 
 // —— 2. 目录构建：优先级、一致、冲突 ——
 const api = {
@@ -24,13 +25,15 @@ const api = {
     other: { models: { 'deepseek-flash': { cost: { input: 2, output: 10, cache_read: 0.1 } } } },
     toy: { models: { 'toy-1': { cost: { input: 1, output: 2, cache_read: 0.01 } } } },
     toy2: { models: { 'toy-1': { cost: { input: 1, output: 2, cache_read: 0.01 } } } },
-    bad: { models: { 'clash-1': { cost: { input: 1, output: 2 } } } },
-    bad2: { models: { 'clash-1': { cost: { input: 1, output: 9 } } } },
+    bad: { models: { 'clash-1': { cost: { input: 1, output: 2, cache_read: 0.1 } } } },
+    bad2: { models: { 'clash-1': { cost: { input: 1, output: 9, cache_read: 0.1 } } } },
+    partial: { models: { 'no-read': { cost: { input: 1, output: 4 } } } },
 };
 const built = buildRatios(api);
 check('build: 首选 deepseek 的报价', built.byModel.get('deepseek-flash').out === 4);
 check('build: 多 provider 一致时收录', built.byModel.get('toy-1').out === 2);
 check('build: 报价冲突 → 记冲突且不收录', built.conflicts.has('clash-1') && !built.byModel.has('clash-1'));
+check('build: 缺 cache_read 的条目不入账', !built.byModel.has('no-read'));
 
 // —— 3. 名字归一 ——
 check('normalize: 去 provider 前缀', normalizeModelName('OpenAI/GPT-4o') === 'gpt-4o');

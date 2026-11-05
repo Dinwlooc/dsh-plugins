@@ -1,6 +1,6 @@
 {
     "name": "@dinwlooc/dsh-budget-watch",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "Warn-only token budget watcher for DeepSeek Harness: model-filled grants, deterministic raw-token accounting, appended threshold warnings, never interrupts.",
     "type": "module",
     "main": "./index.js",

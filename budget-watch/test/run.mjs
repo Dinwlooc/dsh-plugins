@@ -11,7 +11,9 @@ function check(name, ok, detail = '') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  :: ' + detail : ''}`);
 }
 
-function usage(input, output = 0, cacheRead = 0, cacheWrite = 0, model = '') {
+// 默认模型改成已定价的 deepseek-flash：未知模型现在不再折算（按总量计），
+// 需要验证旧「按 flash 兜底」路径的用例应显式传 'unknown-model'。
+function usage(input, output = 0, cacheRead = 0, cacheWrite = 0, model = 'deepseek-flash') {
     return { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite, model };
 }
 
@@ -139,12 +141,12 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bw-test-'));
     const { status, register, stream } = makeEnv(home);
     const agent = agentWith('sdisjoint');
     await register.execute({ tokens: 1000 }, { agent });
-    await meter(stream, 'sdisjoint', { inputTokens: 100, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 0, totalTokens: 1050 });
+    await meter(stream, 'sdisjoint', { inputTokens: 100, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 0, totalTokens: 1050, model: 'deepseek-flash' });
     const out = await status.execute({}, { agent });
     // 100 miss + 900 hit·0.0202 + 50 out·4.0 = 318
     check('disjoint usage: weighted (100 + 900·0.02 + 50·4 = 318)', /used=318\b/.test(out), out.split('\n')[0]);
     const ledger = JSON.parse(fs.readFileSync(path.join(home, 'budget-watch', 'sdisjoint.json'), 'utf8'));
-    check('disjoint usage: hit stays 900, miss 100', ledger.models['?'].hit === 900 && ledger.models['?'].miss === 100, JSON.stringify(ledger.models));
+    check('disjoint usage: hit stays 900, miss 100', ledger.models['deepseek-flash'].hit === 900 && ledger.models['deepseek-flash'].miss === 100, JSON.stringify(ledger.models));
     check('disjoint usage: total is the reported 1050', ledger.sessionTotal === 1050, String(ledger.sessionTotal));
 }
 
@@ -252,12 +254,14 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bw-test-'));
     check('three-tier money (hit/miss/out)', /¥6\.4[0-9]?/.test(out), out.split('\n')[2]);
     check('no per-model mix (trimmed)', !/deepseek-flash=/.test(out), out);
 }
-// 11) 未归因桶：按 defaultRates 计价并标 *
+// 11) 未归因桶：折算不参与（按总量计），展示金额仍按 defaultRates 估算并标 attr 0%
 {
     const { status, stream } = makeEnv(home);
     const agent = agentWith('sunknown');
     await meter(stream, 'sunknown', usage(1_000_000, 0, 0, 0, 'unknown-model'));
     const out = await status.execute({}, { agent });
+    const unknownLedger = JSON.parse(fs.readFileSync(path.join(home, 'budget-watch', 'sunknown.json'), 'utf8'));
+    check('unattributed: 折算不计入 weighted（按总量计）', (unknownLedger.cost.weighted || 0) === 0 && (unknownLedger.cost.quota || 0) === 1_000_000, JSON.stringify(unknownLedger.cost));
     check('unattributed priced at default (not free)', /attr 0%/.test(out) && /money≈¥2\.13/.test(out) && !/unknown-model=/.test(out), out.split('\n')[2]);
 }
 // 12) 订阅模型：不参与 ¥ 求和，单列 not convertible

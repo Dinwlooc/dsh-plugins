@@ -21,8 +21,10 @@ export function ratiosFromCost(cost) {
     if (!(input > 0) || !Number.isFinite(output) || output < 0) return null;
     const read = Number(cost.cache_read);
     const write = Number(cost.cache_write);
+    // 没有 cache_read 就无法得出命中档比例：整条丢弃，绝不默认成「缓存免费」。
+    if (!Number.isFinite(read) || read < 0) return null;
     return {
-        hit: Number.isFinite(read) && read >= 0 ? read / input : 0,
+        hit: read / input,
         miss: 1,
         out: output / input,
         write: Number.isFinite(write) && write >= 0 ? write / input : 1,

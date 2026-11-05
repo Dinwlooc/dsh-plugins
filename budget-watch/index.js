@@ -250,8 +250,8 @@ function ratioOf(config, model) {
 function weightedOf(config, mix, model) {
     const rates = ratesOf(config, model);
     if (rates && rates.subscription) return null;
-    const use = ratioOf(config, model) || ratiosOfRates(config.defaultRates);
-    if (use === null) return null;
+    const use = ratioOf(config, model);
+    if (use === null) return null; // 未知模型：不折算，由调用方按总量计
     const fh = factorOf(config, 'hit');
     const fm = factorOf(config, 'miss');
     const fo = factorOf(config, 'out');
@@ -259,7 +259,7 @@ function weightedOf(config, mix, model) {
     if (!(missRate > 0)) return null;
     const amount = (mix.hit / 1e6) * use.hit * fh
         + (mix.miss / 1e6) * use.miss * fm
-        + (mix.write / 1e6) * use.miss * fm
+        + (mix.write / 1e6) * use.write * fm
         + (mix.out / 1e6) * use.out * fo;
     return Math.round((amount / (missRate / 1e6)));
 }
@@ -268,8 +268,8 @@ function weightedOf(config, mix, model) {
 function hitWeightedOf(config, mix, model) {
     const rates = ratesOf(config, model);
     if (rates && rates.subscription) return null;
-    const use = ratioOf(config, model) || ratiosOfRates(config.defaultRates);
-    if (use === null) return null;
+    const use = ratioOf(config, model);
+    if (use === null) return null; // 未知模型：不折算
     const missRate = use.miss * factorOf(config, 'miss');
     if (!(missRate > 0)) return null;
     const amount = (mix.hit / 1e6) * use.hit * factorOf(config, 'hit');
@@ -888,7 +888,7 @@ export function apply(ctx, rawConfig) {
     // 绝不 await、绝不进入 llm/stream 路径——记账永远是同步的。
     try {
         const rates = createRates({
-            dir: ledgerDir(config),
+            dir: path.join(ledgerDir(config), 'rates'),
             url: typeof config.ratesUrl === 'string' && config.ratesUrl !== '' ? config.ratesUrl : undefined,
             ttlHours: Number(config.ratesRefreshHours),
             disabled: process.env.DSH_BUDGET_WATCH_OFFLINE === '1',
@@ -1112,6 +1112,8 @@ async function* meterStream(config, options, upstream) {
                         ledger.cost.billed += split.billed;
                         const w = weightedOf(config, split.mix, key);
                         if (w !== null) ledger.cost.weighted += w;
+                        // 未知模型（价目表与 models.dev 都没有）：按总量计，不折算（Owner 2026-11-06）。
+                        else ledger.cost.quota += split.quota;
                         const wh = hitWeightedOf(config, split.mix, key);
                         if (wh !== null) {
                             ledger.cost.hitWeighted = (Number(ledger.cost.hitWeighted) || 0) + wh;
