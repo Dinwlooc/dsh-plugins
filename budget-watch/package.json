@@ -1,6 +1,6 @@
 {
     "name": "@dinwlooc/dsh-budget-watch",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Warn-only token budget watcher for DeepSeek Harness: model-filled grants, deterministic raw-token accounting, appended threshold warnings, never interrupts.",
     "type": "module",
     "main": "./index.js",
@@ -17,7 +17,8 @@
         "cordis.patch.yml",
         "README.md",
         "client.js",
-        "settings.js"
+        "settings.js",
+        "rates.js"
     ],
     "license": "MIT",
     "dsh": {

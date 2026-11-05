@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { createRates } from './rates.js';
 import { MESSAGES, render } from './messages.js';
 import { overlayStored, handleSettings } from './settings.js';
 
@@ -54,6 +55,10 @@ const DEFAULTS = Object.freeze({
     timeFactors: { hit: 1, miss: 1, out: 1 },
     // USD → CNY 换算率（仅文档用；上表已是人民币）
     usdToCny: 7.1,
+    // 折算关系源（Owner 2026-11-06）：绝对值不入账，只取 models.dev 给的相对倍数。
+    // config.prices 命中时优先于它；两者都没有才退回 defaultRates（flash 比例）。
+    ratesUrl: 'https://models.dev/api.json',
+    ratesRefreshHours: 24,
 });
 
 function toRates(value) {
@@ -209,6 +214,34 @@ function factorOf(config, tier) {
     return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
+/** 绝对费率 → 相对 miss 的倍数；折算只认比例，币种与每百万单位在相除时抵消。 */
+function ratiosOfRates(rates) {
+    const miss = Number(rates && rates.miss);
+    if (!(miss > 0)) return null;
+    return {
+        hit: Number(rates.hit) / miss,
+        miss: 1,
+        out: Number(rates.out) / miss,
+        write: 1,
+    };
+}
+
+/**
+ * 折算关系：config.prices 明示 > models.dev 相对价 > null（调用方退回 defaultRates）。
+ * 只看倍数，不看绝对值（Owner 2026-11-06）。
+ */
+function ratioOf(config, model) {
+    const rates = ratesOf(config, model);
+    if (rates && rates.subscription) return null;
+    if (rates !== null) return ratiosOfRates(rates);
+    const book = config.rates;
+    if (book && typeof book.lookup === 'function') {
+        const found = book.lookup(model);
+        if (found) return found;
+    }
+    return null;
+}
+
 /**
  * 计权：把 hit/miss/out/write 全部折算成「等效未命中缓存 token」（Owner 2026-10-30）。
  *   W = 加权金额 / miss 单价   → miss 恒为 1，其余按价格比例折算，时段因子只改比例。
@@ -217,7 +250,8 @@ function factorOf(config, tier) {
 function weightedOf(config, mix, model) {
     const rates = ratesOf(config, model);
     if (rates && rates.subscription) return null;
-    const use = rates !== null ? rates : config.defaultRates;
+    const use = ratioOf(config, model) || ratiosOfRates(config.defaultRates);
+    if (use === null) return null;
     const fh = factorOf(config, 'hit');
     const fm = factorOf(config, 'miss');
     const fo = factorOf(config, 'out');
@@ -234,7 +268,8 @@ function weightedOf(config, mix, model) {
 function hitWeightedOf(config, mix, model) {
     const rates = ratesOf(config, model);
     if (rates && rates.subscription) return null;
-    const use = rates !== null ? rates : config.defaultRates;
+    const use = ratioOf(config, model) || ratiosOfRates(config.defaultRates);
+    if (use === null) return null;
     const missRate = use.miss * factorOf(config, 'miss');
     if (!(missRate > 0)) return null;
     const amount = (mix.hit / 1e6) * use.hit * factorOf(config, 'hit');
@@ -848,6 +883,23 @@ export const SETTINGS_FIELDS = Object.freeze([
 export function apply(ctx, rawConfig) {
     const config = normalizeConfig(rawConfig);
     overlayStored('budget-watch', SETTINGS_FIELDS, config);
+
+    // 折算关系源：先用磁盘缓存顶上，缓存过期才在后台刷新。任何失败都退回 config.prices。
+    // 绝不 await、绝不进入 llm/stream 路径——记账永远是同步的。
+    try {
+        const rates = createRates({
+            dir: ledgerDir(config),
+            url: typeof config.ratesUrl === 'string' && config.ratesUrl !== '' ? config.ratesUrl : undefined,
+            ttlHours: Number(config.ratesRefreshHours),
+            disabled: process.env.DSH_BUDGET_WATCH_OFFLINE === '1',
+            log: () => {},
+        });
+        config.rates = rates;
+        rates.load();
+    }
+    catch {
+        // 折算源不可用时保持 config.prices / defaultRates 的老口径。
+    }
 
     ctx.tools.register(createRegisterTool(ctx, config));
     ctx.tools.register(createStatusTool(ctx, config));

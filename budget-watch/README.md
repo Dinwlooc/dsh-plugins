@@ -82,6 +82,14 @@ provider 的 usage 有两种语义并存，旧实现只认包含式，遇到分�
 - 折算不改变预算判定：预算仍按 billed+quota 原始 token 与 granted 比较；¥ 只是同一账本的另一种读法。80% 提醒行保持纯 token、保持单行（前缀缓存纪律）。
 - **单价唯一权威 = 本插件 `prices` 配置**；AGENTS/meta 里的数字只是量级提示，避免多处漂移。
 
+## 折算关系源（0.4.0，Owner 2026-11-06）
+
+- **只取比例，不取金额**：从 `https://models.dev/api.json` 读各模型的 input / cache_read / output / cache_write，除以 input 归一成 `hit / miss=1 / out / write`。币种、每百万单位、高峰倍率在相除时全部抵消——这正是折算需要的口径。
+- **优先级**：`config.prices` 明示 > models.dev 比例 > `defaultRates`（flash 比例）。配置里写了价就永远以配置为准，不会被远程数据覆盖。
+- **不编数**：同模型多 provider 报价冲突、结构不符、拉取失败 → 一律不入账，退回上一层。冲突条目数可在 `rates.state()` 看到。
+- **缓存与离线**：比例写 `<home>/budget-watch/rates-cache.json`（默认 TTL 24h，`ratesRefreshHours` 可调）；缓存命中即离线可用。设 `DSH_BUDGET_WATCH_OFFLINE=1` 可完全禁网。
+- **展示金额不变**：面板里的 ¥ 仍按 `config.prices` 计算；本次只改「折算成等效 miss token」的比例口径。
+
 ## 账本
 
 `$DSH_HOME/budget-watch/<sessionId>.json`：`{ sessionId, sessionTotal, cost{billed,quota}, models{}, task{...}, unregisteredNotified, updatedAt }`。
