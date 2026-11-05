@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Meta Tools",
-    "description": "Model-facing tools that build and maintain a per-model prompt & knowledge library (.dsh) in any workspace: model-auto routing, guarded writes with revision logs, keyword/body search, and recycle-bin deletes."
+    "description": "Integrated meta-library (.dsh) plugin for models: task routing with a cold-start plan, revision signing (revlog), the project task-type registry, model-identity aliases, theme presets, prompt injection for the main agent (public/meta) and for delegated children (configurable meta/SUBAGENTS.md), a vendored tool-search disclosure engine with a session-frozen catalog, and its own Meta-tools settings column."
   }
 }

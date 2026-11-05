@@ -8,16 +8,21 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMetaRouteTool } from "../lib/route.js";
+import { BOOTSTRAP_SECTION, SUBAGENT_SECTION, installBootstrap, loadMetaBootstrap, loadSubagentPrompt } from "../lib/bootstrap.js";
 import { createMetaSignTool } from "../lib/sign.js";
 import { createMetaTaskTypeTool } from "../lib/tasktype.js";
 import { createMetaAliasTool } from "../lib/alias.js";
 import { modelMapProjection } from "../lib/model-map.js";
 import {
-    appendRevlog, composeTaskTypes, configTaskTypes, confine, modelLibraryPath,
+    appendRevlog, composeTaskTypes, configTaskTypes, confine, modelLibraryPath, rememberWorkspace,
     normalizeAliases, normalizeConfig, readProjectConfig, readTaskTypeRegistry,
     registerTaskType, removeTaskType, resolveModelIdentity, safeName, setPresetTheme,
     setThemes, sha256, systemDirOf, themeState, themeStateSync,
 } from "../lib/library.js";
+
+// 隔离持久化：settings.js 在模块顶层读 DSH_HOME，必须在任何动态 import("../lib/index.js") 之前设好，
+// 否则夹具读的是真实 ~/.dsh/meta-tools/config.json（设置端点 POST 还会写它）。
+process.env.DSH_HOME = await mkdtemp(join(tmpdir(), "mt-test-"));
 
 let pass = 0;
 let failCount = 0;
@@ -447,6 +452,360 @@ await check("meta_alias: set/list/remove preserves other keys, allows cross-fami
 
     await writeFile(configFile, JSON.stringify({ version: 1, revlogEntries: 8 }), "utf8");
 });
+
+// ---- v4 (Owner 2026-10-29): independent Meta-tools settings column + sign switch ----
+import { metaSettingsState, setSignEnabled } from "../lib/library.js";
+import { SIGN_DISABLED_TEXT } from "../lib/sign.js";
+
+await check("sign switch: defaults on, project file boolean wins, junk falls back", async () => {
+    assert.equal(normalizeConfig(undefined).signEnabled, true);
+    assert.equal(normalizeConfig({ signEnabled: false }).signEnabled, false);
+    const configFile = join(workspace, ".dsh", "meta", "config.json");
+    await mkdir(join(workspace, ".dsh", "meta"), { recursive: true });
+    await writeFile(configFile, JSON.stringify({ version: 1, revlogEntries: 8 }), "utf8");
+    assert.equal((await readProjectConfig(cfg, { signEnabled: true })).signEnabled, true, "absent -> fallback");
+    await writeFile(configFile, JSON.stringify({ version: 1, signEnabled: false }), "utf8");
+    assert.equal((await readProjectConfig(cfg, { signEnabled: true })).signEnabled, false, "project file wins over patch default");
+    await writeFile(configFile, JSON.stringify({ version: 1, signEnabled: "no" }), "utf8");
+    assert.equal((await readProjectConfig(cfg, { signEnabled: true })).signEnabled, true, "non-boolean ignored");
+});
+
+await check("meta_sign while OFF: SIGN_DISABLED answer, skip-in-body wording, no revlog write", async () => {
+    const configFile = join(workspace, ".dsh", "meta", "config.json");
+    const target = join(workspace, ".dsh", "public", "业务", "off.md");
+    await mkdir(join(workspace, ".dsh", "public", "业务"), { recursive: true });
+    await writeFile(target, "body\n", "utf8");
+    await writeFile(configFile, JSON.stringify({ version: 1, signEnabled: false }), "utf8");
+    const tool = createMetaSignTool(ctx, cfg);
+    const r = await tool.execute({ path: ".dsh/public/业务/off.md", revisionBasis: "b" }, exec);
+    assert.equal(r.code, "SIGN_DISABLED");
+    const text = tool.output.render({}, r)[0].text;
+    assert.ok(text.includes("signing is disabled for this project"), text);
+    assert.ok(text.includes("Do not sign"), text);
+    assert.ok(/reply body/i.test(text), "must forbid mentioning it in the reply body");
+    assert.ok(!text.includes("meta_sign SIGN_DISABLED"), "a bare code is not a usable reminder");
+    let wrote = true;
+    try { await readFile(`${target}.revlog.md`, "utf8"); } catch { wrote = false; }
+    assert.equal(wrote, false, "disabled signing must not touch the revlog");
+    // Disabled wins over bad arguments: still the switch answer, not USAGE.
+    assert.equal((await tool.execute({}, exec)).code, "SIGN_DISABLED");
+    // Back ON: the same tool signs again (never unregistered, only gated).
+    await writeFile(configFile, JSON.stringify({ version: 1, revlogEntries: 8, signEnabled: true }), "utf8");
+    const ok = await tool.execute({ path: ".dsh/public/业务/off.md", revisionBasis: "恢复" }, exec);
+    assert.equal(ok.code, "OK");
+    assert.ok(SIGN_DISABLED_TEXT.includes("disabled"));
+});
+
+await check("setSignEnabled: read-modify-write keeps revlogEntries/modelAliases, refuses without .dsh", async () => {
+    const configFile = join(workspace, ".dsh", "meta", "config.json");
+    await writeFile(configFile, JSON.stringify({ version: 1, revlogEntries: 12, modelAliases: { a: "b" } }), "utf8");
+    const after = await setSignEnabled(cfg, false);
+    assert.equal(after.signEnabled, false);
+    const onDisk = JSON.parse(await readFile(configFile, "utf8"));
+    assert.equal(onDisk.signEnabled, false);
+    assert.equal(onDisk.revlogEntries, 12, "unrelated key survives");
+    assert.deepEqual(onDisk.modelAliases, { a: "b" });
+    await assert.rejects(setSignEnabled(normalizeConfig({ root: join(tmp, "bare-ws") }), false), /no .dsh library/);
+    // never creates .dsh just to store a setting (would cancel theme auto-apply)
+    const bare = normalizeConfig({ root: join(tmp, "bare-ws") });
+    assert.equal((await readProjectConfig(bare, { signEnabled: true })).signEnabled, true);
+});
+
+await check("metaSettingsState feeds the settings column (sign + themes + storage)", async () => {
+    const { createVolatile } = await import("@deepseek-ai/cosmokit");
+    const tcfg = normalizeConfig({
+        root: workspace,
+        themes: createVolatile({ T1: { taskTypes: ["评审"] } }),
+        presetTheme: createVolatile("T1"),
+    });
+    const state = await metaSettingsState(tcfg);
+    assert.equal(state.presetTheme, "T1");
+    assert.deepEqual(Object.keys(state.themes), ["T1"]);
+    assert.equal(state.signEnabled, false, "project file value");
+    assert.equal(state.storage, ".dsh/meta/config.json");
+    assert.equal(state.hasDsh, true);
+    await setSignEnabled(cfg, true);
+    assert.equal((await metaSettingsState(tcfg)).signEnabled, true);
+});
+
+await check("settings HTTP route: GET state, POST signEnabled persists + answers live state", async () => {
+    const { apply } = await import("../lib/index.js");
+    const registered = { routes: [], tools: [] };
+    const fakeCtx = {
+        effect: (fn) => fn(),
+        on: () => () => {},
+        logger: { warn: () => {} },
+        sessionProjections: { register: () => {} },
+        systemPrompt: { section: () => () => {} },
+        tools: {
+            register: (t) => { registered.tools.push(t.name); return () => {}; },
+            get: () => undefined,
+            schemas: () => [],
+            execute: async () => ({}),
+        },
+        webServer: {
+            register: (route) => {
+                registered.routes.push(route);
+                return () => {};
+            },
+        },
+    };
+    apply(fakeCtx, { root: workspace });
+    // 锚定：settings.js 头注释的契约（一个 JSON 文件 + 一个 HTTP 端点，保存后覆盖活配置）
+    // 与 SETTINGS_FIELDS 的边界；端点条数与顺序是实现形状，新增 knobs 端点不算需求变化。
+    const settingsRoute = registered.routes.find((r) => r.path === "/api/meta-tools/config");
+    assert.ok(settingsRoute, "settings endpoint /api/meta-tools/config registered");
+
+    const res = () => {
+        const r = { status: 0, headers: {}, body: "" };
+        r.writeHead = (status, headers) => { r.status = status; Object.assign(r.headers, headers); };
+        r.end = (body) => { r.body = body; };
+        return r;
+    };
+    const getReq = { method: "GET", headers: {} };
+    const g = res();
+    await settingsRoute.handler(getReq, g);
+    assert.equal(g.status, 200);
+    const state = JSON.parse(g.body);
+    assert.ok(Object.prototype.hasOwnProperty.call(state, "signEnabled"));
+    assert.equal(state.storage, ".dsh/meta/config.json");
+
+    const body = Buffer.from(JSON.stringify({ signEnabled: false }), "utf8");
+    const postReq = {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        async *[Symbol.asyncIterator]() { yield body; },
+    };
+    const p = res();
+    await settingsRoute.handler(postReq, p);
+    assert.equal(p.status, 200);
+    const posted = JSON.parse(p.body);
+    assert.equal(posted.signEnabled, false);
+    assert.equal(posted.error, undefined);
+    const onDisk = JSON.parse(await readFile(join(workspace, ".dsh", "meta", "config.json"), "utf8"));
+    assert.equal(onDisk.signEnabled, false);
+    // bad boolean -> 400 from setSignEnabled, not a silent toggle
+    const badReq = {
+        method: "POST",
+        headers: {},
+        async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ signEnabled: "maybe" }), "utf8"); },
+    };
+    const b = res();
+    await settingsRoute.handler(badReq, b);
+    assert.equal(b.status, 400);
+    // restore
+    await writeFile(join(workspace, ".dsh", "meta", "config.json"), JSON.stringify({ version: 1, revlogEntries: 8 }), "utf8");
+});
+
+await check("v3.1: inventory carries every type's path plan (paths only)", async () => {
+    await mkdir(join(workspace, ".dsh", "public", "meta"), { recursive: true });
+    await writeFile(join(workspace, ".dsh", "public", "meta", "META策略.md"), "# META\n正文", "utf8");
+    await mkdir(join(workspace, ".dsh", "public", "业务"), { recursive: true });
+    await writeFile(join(workspace, ".dsh", "public", "业务", "细则.md"), "# 细则\n正文", "utf8");
+    await writeFile(join(workspace, ".dsh", "public", "业务", "0001-paper.md"), "# 0001\n正文", "utf8");
+    const planCtx = { sessionProjections: ctx.sessionProjections, get: () => undefined };
+    const tool = createMetaRouteTool(planCtx, cfg);
+    const inv = await tool.execute({}, exec);
+    assert.ok(inv.plan, "inventory must carry the plan by default");
+    // v3.2: public/meta bodies are injected into the system prompt, so the plan
+    // must NOT list them again (double payment).
+    assert.equal(inv.plan.bootstrapInjected, true);
+    assert.ok(!inv.plan.shared.some((p) => p.endsWith("public/meta/META策略.md")), "injected files are not re-listed");
+    const noInject = normalizeConfig({ root: workspace, bootstrap: false, presets: [{ theme: "t", taskTypes: ["业务", "插件"] }] });
+    const plain = await createMetaRouteTool(planCtx, noInject).execute({}, exec);
+    assert.equal(plain.plan.bootstrapInjected, false);
+    assert.ok(plain.plan.shared.some((p) => p.endsWith("public/meta/META策略.md")), "without bootstrap the plan carries public/meta");
+    assert.ok(inv.plan.perType["业务"].some((p) => p.endsWith("public/业务/细则.md")), "per-type part carries the type 细则");
+    assert.ok(!inv.plan.perType["业务"].some((p) => p.endsWith("0001-paper.md")), "knowledge papers stay search-only");
+    const all = [...inv.plan.shared, ...Object.values(inv.plan.perType).flat()];
+    for (const p of all) {
+        assert.ok(p.startsWith(".dsh/"), `plan path must be .dsh-prefixed, got ${p}`);
+        assert.ok(!p.includes("\n"));
+    }
+    const rendered = tool.output.render({}, inv)[0].text;
+    assert.ok(rendered.includes("shared:") && rendered.includes("业务:"), "render must surface the plan");
+    // kill switch: inventoryPlan false keeps the old two-call flow
+    const offCfg = normalizeConfig({ root: workspace, inventoryPlan: false, presets: [{ theme: "t", taskTypes: ["业务", "插件"] }] });
+    const off = await createMetaRouteTool(planCtx, offCfg).execute({}, exec);
+    assert.equal(off.plan, undefined, "inventoryPlan:false must not carry the plan");
+    assert.ok(String(off.nextHint).includes("taskType"), "old nextHint survives");
+});
+
+await check("v3.2: loadMetaBootstrap injects bodies, skips revlogs and papers", async () => {
+    const dir = join(workspace, ".dsh", "public", "meta");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "META策略.md"), "# META\n正文A", "utf8");
+    await writeFile(join(dir, "META策略.md.revlog.md"), "# 修订日志\n- x", "utf8");
+    await writeFile(join(dir, "0001-paper.md"), "# 论文\n正文B", "utf8");
+    const loaded = loadMetaBootstrap(dir, 0);
+    assert.ok(loaded.text.includes("正文A"), "body must be injected");
+    assert.ok(!loaded.text.includes("修订日志"), "signing mirror must not be injected");
+    assert.ok(!loaded.text.includes("正文B"), "papers stay search-only");
+    assert.deepEqual(loaded.files, ["META策略.md"]);
+    assert.ok(loaded.text.startsWith("## Meta library"), "english header first");
+    // cap: every block beyond the budget is skipped, and reported
+    const capped = loadMetaBootstrap(dir, 5);
+    assert.equal(capped.truncated, true);
+    assert.equal(capped.files.length, 0);
+    // absent dir -> empty, no throw
+    assert.equal(loadMetaBootstrap(join(workspace, "nope"), 0).text, "");
+});
+
+await check("v3.2: installBootstrap registers a per-agent section", async () => {
+    const handlers = [];
+    const fakeCtx = {
+        get: (name) => (name === "workingDirectory" ? { get: () => workspace } : undefined),
+        on: (name, fn) => { if (name === "agent/created") handlers.push(fn); },
+        effect: (fn) => fn(),
+    };
+    installBootstrap(fakeCtx, normalizeConfig({ root: workspace }));
+    assert.equal(handlers.length, 1, "must listen to agent/created");
+    const sections = [];
+    const agent = {
+        session: { id: "s" },
+        ctx: { effect: (fn) => fn(), systemPrompt: { section: (s) => { sections.push(s); return () => {}; } } },
+    };
+    handlers[0]({ agent });
+    assert.equal(sections.length, 1);
+    assert.equal(sections[0].name, BOOTSTRAP_SECTION);
+    assert.ok(Number.isFinite(sections[0].order));
+    assert.ok(sections[0].text.includes("正文A"), "section text carries the workspace bodies");
+    // off switch: no listener, no section
+    const off = [];
+    installBootstrap({ get: () => undefined, on: (n, fn) => off.push(fn), effect: (fn) => fn() }, normalizeConfig({ root: workspace, bootstrap: false }));
+    assert.equal(off.length, 0, "bootstrap:false must not register anything");
+});
+
+
+await check("v3.3: subagents skip the bootstrap by default, project config opts them back in", async () => {
+    const handlers = [];
+    const fakeCtx = {
+        get: (name) => (name === "workingDirectory" ? { get: () => workspace } : undefined),
+        on: (name, fn) => { if (name === "agent/created") handlers.push(fn); },
+        effect: (fn) => fn(),
+    };
+    installBootstrap(fakeCtx, normalizeConfig({ root: workspace }));
+    const make = (origin) => {
+        const sections = [];
+        return {
+            session: origin === undefined ? { id: "s" } : { id: "s", header: { origin } },
+            ctx: { effect: (fn) => fn(), systemPrompt: { section: (sec) => { sections.push(sec); return () => {}; } } },
+            sections,
+        };
+    };
+    const main = make(undefined);
+    handlers[0]({ agent: main });
+    assert.equal(main.sections.length, 1, "main agent still gets the bootstrap");
+    const child = make("subagent");
+    handlers[0]({ agent: child });
+    assert.equal(child.sections.length, 0, "subagent is skipped by default");
+    const metaDir = join(workspace, ".dsh", "meta");
+    await mkdir(metaDir, { recursive: true });
+    await writeFile(join(metaDir, "config.json"), JSON.stringify({ bootstrapSubagents: true }), "utf8");
+    const child2 = make("subagent");
+    handlers[0]({ agent: child2 });
+    assert.equal(child2.sections.length, 1, "bootstrapSubagents:true opts children back in");
+    await rm(join(metaDir, "config.json"), { force: true });
+});
+
+await check("v4: loadSubagentPrompt reads the configured prompt file", async () => {
+    const dir = join(workspace, ".dsh", "meta");
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, "SUBAGENTS.md");
+    assert.equal(loadSubagentPrompt(workspace).text, "", "absent file -> empty");
+    await writeFile(file, "\uFEFF# 子代理\n子代理正文", "utf8");
+    const loaded = loadSubagentPrompt(workspace);
+    assert.ok(loaded.text.includes("子代理正文"), "bodies are injected");
+    assert.ok(loaded.text.startsWith("## Subagent prompts"), "english header first");
+    assert.equal(loaded.file, ".dsh/meta/SUBAGENTS.md");
+    // the file name is Owner config: any flat .md name is honored, paths are refused
+    await writeFile(join(dir, "HOLDER.md"), "# 席\n席位正文", "utf8");
+    assert.equal(loadSubagentPrompt(workspace, "HOLDER.md").file, ".dsh/meta/HOLDER.md");
+    assert.equal(loadSubagentPrompt(workspace, "../evil.md").file, ".dsh/meta/SUBAGENTS.md", "path traversal falls back to the default name");
+    await rm(join(dir, "HOLDER.md"), { force: true });
+    await writeFile(file, "   \n", "utf8");
+    assert.equal(loadSubagentPrompt(workspace).text, "", "blank file -> empty");
+    await rm(file, { force: true });
+});
+
+await check("v4: a child gets the subagent prompt INSTEAD of the parent prefix", async () => {
+    const handlers = [];
+    const fakeCtx = {
+        get: (name) => (name === "workingDirectory" ? { get: () => workspace } : undefined),
+        on: (name, fn) => { if (name === "agent/created") handlers.push(fn); },
+        effect: (fn) => fn(),
+    };
+    installBootstrap(fakeCtx, normalizeConfig({ root: workspace }));
+    const make = () => {
+        const sections = [];
+        return {
+            session: { id: "s", header: { origin: "subagent" } },
+            ctx: { effect: (fn) => fn(), systemPrompt: { section: (s) => { sections.push(s); return () => {}; } } },
+            sections,
+        };
+    };
+    const noPrompt = make();
+    handlers[0]({ agent: noPrompt });
+    assert.equal(noPrompt.sections.length, 0, "no child prompt and no opt-in -> nothing");
+    await mkdir(join(workspace, ".dsh", "meta"), { recursive: true });
+    await writeFile(join(workspace, ".dsh", "meta", "SUBAGENTS.md"), "# 子代理\n子代理正文", "utf8");
+    const child = make();
+    handlers[0]({ agent: child });
+    assert.equal(child.sections.length, 1);
+    assert.equal(child.sections[0].name, SUBAGENT_SECTION);
+    assert.ok(child.sections[0].text.includes("子代理正文"));
+    assert.ok(!child.sections[0].text.includes("正文A"), "parent prefix is replaced, not appended");
+    await writeFile(join(workspace, ".dsh", "meta", "config.json"), JSON.stringify({ subagentPrompt: false }), "utf8");
+    const off = make();
+    handlers[0]({ agent: off });
+    assert.equal(off.sections.length, 0, "subagentPrompt:false disables the child prompt");
+    await rm(join(workspace, ".dsh", "meta", "config.json"), { force: true });
+    await rm(join(workspace, ".dsh", "meta", "SUBAGENTS.md"), { force: true });
+});
+
+await check("v4: readProjectConfig surfaces both subagent switches", async () => {
+    const dir = join(workspace, ".dsh", "meta");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.json"), JSON.stringify({ bootstrapSubagents: true, subagentPrompt: false }), "utf8");
+    const p = await readProjectConfig(normalizeConfig({ root: workspace }), { bootstrapSubagents: false, subagentPrompt: true });
+    assert.equal(p.bootstrapSubagents, true);
+    assert.equal(p.subagentPrompt, false);
+    // the file name is project config as well
+    await writeFile(join(dir, "config.json"), JSON.stringify({ subagentPromptFile: "HOLDER.md" }), "utf8");
+    const q = await readProjectConfig(normalizeConfig({ root: workspace }), {});
+    assert.equal(q.subagentPromptFile, "HOLDER.md");
+    await rm(join(dir, "config.json"), { force: true });
+});
+
+await check("v4: presence probe requires a regular file (not a folder)", async () => {
+    const dir = join(workspace, ".dsh", "meta");
+    await mkdir(join(dir, "DIR.md"), { recursive: true });
+    await writeFile(join(dir, "config.json"), JSON.stringify({ subagentPromptFile: "DIR.md" }), "utf8");
+    const st = await metaSettingsState(normalizeConfig({ root: workspace }));
+    assert.equal(st.subagentPromptFile, "DIR.md");
+    assert.equal(st.subagentPromptPresent, false, "a directory must not read as present");
+    await writeFile(join(dir, "REAL.md"), "# x", "utf8");
+    await writeFile(join(dir, "config.json"), JSON.stringify({ subagentPromptFile: "REAL.md" }), "utf8");
+    const st2 = await metaSettingsState(normalizeConfig({ root: workspace }));
+    assert.equal(st2.subagentPromptPresent, true);
+    await rm(join(dir, "DIR.md"), { recursive: true, force: true });
+    await rm(join(dir, "REAL.md"), { force: true });
+    await rm(join(dir, "config.json"), { force: true });
+});
+
+await check("v4: session-less settings scope to the last session workspace", async () => {
+    const dir = join(workspace, ".dsh", "meta");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SUBAGENTS.md"), "# 子代理\n正文", "utf8");
+    await writeFile(join(dir, "config.json"), JSON.stringify({ subagentPromptFile: "SUBAGENTS.md" }), "utf8");
+    rememberWorkspace(workspace);
+    const st = await metaSettingsState(normalizeConfig({}));
+    assert.equal(st.subagentPromptFile, "SUBAGENTS.md", "the column follows the last session workspace");
+    assert.equal(st.subagentPromptPresent, true);
+    await rm(join(dir, "config.json"), { force: true });
+    await rm(join(dir, "SUBAGENTS.md"), { force: true });
+});
+
 const summary = `RESULT run.mjs: pass=${pass} fail=${failCount}`;
 console.log(summary);
 await rm(tmp, { recursive: true, force: true });

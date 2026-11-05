@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Release Notes",
+    "description": "Read-only settings panel comparing the running build with published DSH releases. Registers no model tool."
+  }
+}

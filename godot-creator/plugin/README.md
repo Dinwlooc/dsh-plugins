@@ -11,7 +11,7 @@ DSH bundle：把 Godot AI 的连接状态做成两个常驻界面件，并向模
 
 ## 预设提示词
 
-`cordis.patch.yml` 的 `persona` 段只写四类内容：**义务**（对结果负责、先读后写、独立回读验证）、**工作方法**（先读后改、小步闭环、最短路径）、**本模式提供的能力**（MCP 直连编辑器、按需技能与流程模板、只读观测件）、**Godot 环境特征**（编辑器会话/快照、场景资源所有权、视觉证据）。不写身份或角色扮演，也不复述项目规则——项目 AGENTS.md 与工具约束文档为最高准则。
+`cordis.patch.yml` 的 `persona` 段只写四行，且**一律英文**（系统注入与工具说明同一语言）：**Governing rules**（指向 AGENTS.md 与工具约束，不复述）、**Working style**（先读后改、小步闭环、回读验证）、**Plugin authoring**（`plugin_manager` + 不改 profile）、**Environment**（编辑器会话/快照、视觉证据）。判据：工具说明或工具返回里已经通告的内容（工具分工、技能清单、签发规则、MCP 工具族）一律不写——系统提示每轮都发，重复一次就是每轮都付一次。
 
 ## 结构
 
@@ -48,14 +48,6 @@ plugin/
 
 `MAX_MCP_SESSIONS=32`，空闲 30 分钟回收，超额 `503 MCP_SESSION_LIMIT_REACHED`。所以**全程只持有 1 个会话**（按 `(端口, instance_nonce)` 归属）：每次探测只发一次 `tools/call`；404 时 `DELETE` 后重建一次；卸载时 `DELETE`；收到额度错误按 `sessionLimitBackoffMs` 退避。
 
-## 自开销工具 `usage_report`
-
-数据全部来自已挂载投影，**不新增计量**：`tokenUsage`（token）、`contextPressure`（上下文占比/窗口）、`contextBreakdown`（组成）。**不记时间**——墙钟/步数是 DSH 内置 `time-context` 插件（默认开启）的职责；**不记预算**——预算唯一账本是 budget-watch。本工具只做 token 与上下文的自开销视图。
-
-- 三模式：`full`（缺省：会话总量 + 总值 + 命中率 + 上下文）· `baseline`（按会话记快照；默认只回一行，`verbose: true` 才回 JSON）· `delta`（免传参取本会话基线，一行给墙钟/总值/命中率）。**预算不在本工具记账**：`budget` 参数已移除，预算唯一账本是 budget-watch（`budget_register`/`budget_status`），防双账本漂移（2026-10-25 去重）。
-- 命中率 `cacheRead/(cacheRead+input)` 低于 96% 时，渲染里追加"低成本——限制工具调用"；阈值与文案在 `lib/index.js`。
-- 投影缺失时字段降级 `null` 并在 `missing` 点名。
-
 ## 项目文件工具 `project_files`
 
 设计论文：`public/插件/0017`（v1.3，含执行记录与未完成项）。**注册表会话启动定型：实装后需重启会话才在工具面可见。**（2026-10-25 由 `project_fs` 改名：ops `query`/`remove` → `find`/`delete`，参数 `remove_rest` → `continue_on_block`；护栏语义未变。）
@@ -81,7 +73,7 @@ plugin_manager(action="install_bundle", target="<仓库根>\\.dsh\\godot-creator
 
 ## 测试
 
-`node test/audit.mjs`（**94 项**断言：传输适配 A、会话生命周期 S、client 状态机 C、自开销工具 U、project_files P；3 项受限环境 SKIP）。
+`node test/audit.mjs`（**62 项**断言：传输适配 A、会话生命周期 S、client 状态机 C、project_files P；受限环境 SKIP 3 项）。自开销工具 `usage_report` 已退役（2026-10-30）：预算归 budget-watch、墙钟归 time-context，重复视图只增加提示词成本。
 
 ## 已知取舍
 

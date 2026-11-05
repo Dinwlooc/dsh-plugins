@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Release Notes">
+  <rect x="12" y="10" width="40" height="44" rx="5" fill="#1f6feb" opacity="0.12" stroke="#1f6feb" stroke-width="3"/>
+  <path d="M20 22h24M20 32h24M20 42h14" stroke="#1f6feb" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="46" cy="46" r="8" fill="#0d1117" stroke="#8b949e" stroke-width="2"/>
+  <path d="M46 42v5l3 2" stroke="#8b949e" stroke-width="2" stroke-linecap="round" fill="none"/>
+</svg>

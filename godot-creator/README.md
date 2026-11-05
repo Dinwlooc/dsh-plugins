@@ -11,7 +11,7 @@
 | Agent 预设 | `plugin/cordis.patch.yml` 的 `preset-godot-creator` 行 | 提示词（义务/方法/模式特征/Godot 环境，不写身份）+ 工具面（22 个插件，对齐官方 `standard` 预设） |
 | 默认预设选择 | 同文件的 `agent-preset-registry` 行 | 新会话默认进入本模式 |
 | 视觉层 | 同文件的 `godot-creator-ui` 行 + `plugin/lib/` | 会话头状态芯片 + 设置页集成诊断卡 |
-| 自开销工具 | `plugin/lib/index.js` | `usage_report`：`full` / `baseline` / `delta` 三档 |
+| 项目文件工具 | `plugin/lib/project-files.js` | `project_files`：类型感知 `find` + 回收站 `delete`（护栏见 plugin/README） |
 | 技能 | `skills/`（13 个） | 经 `skill-filesystem` 的 `bundledSkillDir` 挂载 |
 | 工作流模板 | `workflows/catalog.json`（权威）+ `skills/godot-creator-workflows`（索引） | 2 个模板；只维护 catalog，skill 只给 id/输入索引 |
 
@@ -27,7 +27,7 @@ dsh-plugins/godot-creator/
 │  ├─ lib/{index.js,client.js}
 │  ├─ test/{audit.mjs,tool-cost.mjs}
 │  └─ README.md               # 数据来源、失败语义、验证记录
-├─ skills/                    # 13 个技能
+├─ skills/                    # 1 条技能入口 + 12 个 sections 分节
 ├─ workflows/catalog.json     # 流程模板权威数据源
 ├─ SKILLS.md                  # 技能层契约与来源策略
 ├─ THIRD_PARTY_NOTICES.md     # 归属与许可

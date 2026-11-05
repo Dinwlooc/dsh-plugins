@@ -12,15 +12,18 @@ import {
     composeTaskTypes, readTaskTypeRegistry, registerTaskType, removeTaskType,
     resolveRootCfg,
 } from "./library.js";
+import { MESSAGES, render as fill } from "./messages.js";
 
 const fail = (code, extra = {}) => ({ code, ...extra });
 
 function render(args, value) {
-    if (value.code !== "OK") return [{ type: "text", text: `meta_tasktype ${value.code}` }];
+    if (value.code !== "OK") return [{ type: "text", text: fill(MESSAGES.tasktypeError, { code: value.code }) }];
+    const active = value.active.join(", ");
+    const removed = value.removed.join(", ");
     if (args?.action === "list" || args?.action === undefined) {
-        return [{ type: "text", text: `meta_tasktype: active=[${value.active.join(", ")}] removed=[${value.removed.join(", ")}]` }];
+        return [{ type: "text", text: fill(MESSAGES.tasktypeState, { active, removed }) }];
     }
-    return [{ type: "text", text: `meta_tasktype ${args.action}: ${value.changed} | active=[${value.active.join(", ")}] removed=[${value.removed.join(", ")}]` }];
+    return [{ type: "text", text: fill(MESSAGES.tasktypeChange, { action: args.action, changed: value.changed, active, removed }) }];
 }
 
 export function createMetaTaskTypeTool(ctx, cfg) {

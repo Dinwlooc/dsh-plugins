@@ -10,24 +10,28 @@
 - 未知键（`upstream`/`verified`）被忽略；拼成 `disableModelInvocation` 等会整条丢弃。
 - 只发现顶层 `<name>/SKILL.md`；正文按任务加载，不要整目录塞进提示词。
 
-## Catalog (13)
+## Catalog (1 + 12 分节)
+
+目录里只挂 1 条技能；原 12 条领域技能已并入它的 `sections/`，按需读取，不再各占一条目录。
 
 | Skill | Role |
 | --- | --- |
-| `godot-ai-orchestration` | 编辑器控制协议：会话、工具路由、批量写入、运行/验收。编辑器任务先加载。 |
-| `godot-creator-workflows` | 2 个流程模板（2D 骨架、菜单/HUD/暂停）：阶段/验收/恢复。 |
-| `godot-nodes-scenes` | 场景树、PackedScene、实例化、autoload、生命周期、所有权。 |
-| `godot-gdscript` | GDScript 类型、生命周期、注解、诊断。 |
-| `godot-csharp` | .NET/C#：生命周期、导出、signals、释放、互操作、构建。 |
-| `godot-signals-groups` | signals/groups 解耦通信与验证。 |
-| `godot-resources` | Resource/.tres 数据驱动、共享、UID、序列化。 |
-| `godot-animation` | AnimationPlayer/Tree/Tween、混合、过渡。 |
-| `godot-ui-control` | Control：anchors、containers、theme、焦点、响应式 HUD。 |
-| `godot-shaders` | canvas_item/spatial shader、uniforms、材质、验证。 |
-| `godot-audio` | 播放器、bus、effects、衰减、运行时验证。 |
-| `godot-multiplayer` | authority、RPC、Spawner/Synchronizer、复制、安全。 |
-| `godot-export` | export preset、模板、权限、headless、发布验收。 |
+| `godot-ai-orchestration` | 编辑器控制协议：会话、工具路由、批量写入、运行/验收；并索引下表的 12 个分节。编辑器任务先加载。 |
 
+| 分节（`sections/`） | 何时读 |
+| --- | --- |
+| `godot-gdscript.md` | 写/改 `.gd`：类型、生命周期、注解、诊断 |
+| `godot-nodes-scenes.md` | 场景树、PackedScene、实例化、autoload、所有权 |
+| `godot-ui-control.md` | Control：anchors、containers、theme、焦点、响应式 HUD |
+| `godot-signals-groups.md` | signals/groups 解耦与验证 |
+| `godot-resources.md` | Resource/.tres、共享与独立、UID、序列化 |
+| `godot-animation.md` | AnimationPlayer/Tree/Tween、混合、过渡 |
+| `godot-shaders.md` | canvas_item/spatial shader、uniforms、材质、验证 |
+| `godot-audio.md` | 播放器、bus、effects、衰减、运行时验证 |
+| `godot-multiplayer.md` | authority、RPC、Spawner/Synchronizer、复制、安全 |
+| `godot-csharp.md` | .NET/C#：生命周期、导出、signals、释放、互操作、构建 |
+| `godot-export.md` | export preset、模板、权限、headless、发布验收 |
+| `godot-creator-workflows.md` | 2 个流程模板（2D 骨架、菜单/HUD/暂停）：阶段/验收/恢复 |
 ## 来源与更新
 
 - 工具语义：`hi-godot/godot-ai` 4.3.0，直连 MCP；工具名/`op`/引擎事实一律现场读（`api_manage(op="get_class")`）。

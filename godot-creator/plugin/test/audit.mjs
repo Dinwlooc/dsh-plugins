@@ -14,7 +14,7 @@
  *   C. client half — slot registration, style injection, tone state machine.
  */
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -179,7 +179,6 @@ function hostHarness(config, options = {}) {
                     return () => {};
                 },
             },
-            sessionProjections: options.sessionProjections,
             get(key) {
                 if (key === "sessionHandoff") return options.handoff;
                 if (key === "agents") return options.agents;
@@ -442,127 +441,6 @@ console.log("--- C. client half ---");
     check("C3 card exposes the session channel row", labels.includes("会话通道"), labels.join("/"));
 }
 
-// ---- U: usage_report tool over the host's session projections ----
-{
-    const states = {
-        sessionStats: { turns: 3, steps: 9, llmMs: 24500, toolMs: 8100, ttftMs: 900, ttftSteps: 3, decodeMs: 12000, decodeTokens: 8200 },
-        tokenUsage: { totals: { uncachedInputTokens: 120000, outputTokens: 8200, cacheReadTokens: 30000, cacheWriteTokens: 0 }, last: null },
-        contextPressure: { contextWindow: 128000, pressureTokens: 48700, surfaceTokens: 50100 },
-        contextBreakdown: { systems: [], surfaceTokens: 50100, breakdown: { systemTokens: 12000, toolsTokens: 18000, messageTokens: 20100 } },
-    };
-    const harness = hostHarness({}, { sessionProjections: { stateOf: (_session, key) => states[key] } });
-    const tool = harness.tools.find((entry) => entry.name === "usage_report");
-    check("U1 usage_report registered by the host half", tool !== undefined);
-    if (tool !== undefined) {
-        check(
-            "U2 exposes mode and baseline parameters",
-            tool.parameters.properties.mode?.enum?.join(",") === "full,baseline,delta" && tool.parameters.properties.baseline !== undefined,
-        );
-        const report = await tool.execute({}, { agent: { session: { id: "sess-1" } } });
-        check("U3 timing is time-context's job, not ours", report.time === undefined && report.tokens !== null);
-        check("U4 token totals come from tokenUsage", report.tokens !== null && report.tokens.input === 120000 && report.tokens.cacheRead === 30000);
-        check("U5 percent is pressureTokens over the model window", report.context.percent === 38 && report.context.windowTokens === 128000);
-        check("U6 composition comes from contextBreakdown", report.context.composition !== null && report.context.composition.messageTokens === 20100);
-        const rendered = tool.output.render({}, report)[0].text;
-        check("U7 render is one compact block with the percentage", rendered.includes("38%") && !rendered.includes("步"));
-        let rejected = false;
-        try {
-            await tool.execute({}, {});
-        } catch (error) {
-            rejected = /owning agent session/.test(error.message);
-        }
-        check("U8 rejects a call without an owning session", rejected);
-        const bareHarness = hostHarness({});
-        const bareTool = bareHarness.tools.find((entry) => entry.name === "usage_report");
-        const bare = await bareTool.execute({}, { agent: { session: { id: "s" } } });
-        check("U9 degrades to nulls when projections are absent", bare.time === undefined && bare.tokens === null && bare.missing.length === 3);
-        check("U10 status route still registers beside the tool", typeof harness.handler === "function");
-        // Lightweight task mode: baseline -> work -> delta, one tools/call each.
-        const session = { agent: { session: { id: "sess-1" } } };
-        const baseline = await tool.execute({ mode: "baseline" }, session);
-        const baselineRender = tool.output.render({ mode: "baseline" }, baseline)[0].text;
-        check(
-            "U12 baseline snapshots the counters",
-            baseline.mode === "baseline" && baseline.tokens.input === 120000 && typeof baseline.at === "number" && baselineRender.startsWith("基准已存"),
-        );
-        // Terse by default: no JSON echo (strictly new content, never cached).
-        check("U12b default baseline render carries no JSON", baselineRender === "基准已存（本会话）");
-        const verboseBaseline = await tool.execute({ mode: "baseline", verbose: true }, session);
-        const verboseRender = tool.output.render({ mode: "baseline" }, verboseBaseline)[0].text;
-        const baselineJson = JSON.parse(verboseRender.split("\n").at(-1));
-        check(
-            "U12c verbose baseline round-trips as JSON",
-            baselineJson.at === verboseBaseline.at && baselineJson.tokens.input === 120000 && baselineJson.time === undefined,
-        );
-        const roundTrip = await tool.execute({ mode: "delta", baseline: baselineJson }, session);
-        check("U12d the verbose baseline feeds mode=delta directly", roundTrip.tokens.input === 0);
-        const delta = await tool.execute(
-            { mode: "delta", baseline: { at: Date.now() - 5000, tokens: { input: 100000, output: 7000, cacheRead: 20000, cacheWrite: 0 } } },
-            session,
-        );
-        check("U13 delta subtracts the baseline", delta.tokens.input === 20000 && delta.tokens.output === 1200 && delta.tokens.cacheRead === 10000);
-        check("U14 timing is not ours", delta.wallMs === undefined && delta.time === undefined);
-        const deltaRender = tool.output.render({ mode: "delta" }, delta)[0].text;
-        check("U15 delta renders one short task line", deltaRender.startsWith("任务：总值 +31.2k") && !deltaRender.includes("墙钟"));
-        let noBaseline = false;
-        try {
-            await tool.execute({ mode: "delta" }, { agent: { session: { id: "fresh-session" } } });
-        } catch (error) {
-            noBaseline = /needs a baseline/.test(error.message);
-        }
-        check("U16 delta without a baseline fails loudly", noBaseline);
-        const fromFull = await tool.execute({ mode: "delta", baseline: report }, session);
-        check("U17 a previous full report works as a baseline", fromFull.tokens.input === 0);
-        let badMode = false;
-        try {
-            await tool.execute({ mode: "nope" }, session);
-        } catch (error) {
-            badMode = /unknown mode/.test(error.message);
-        }
-        check("U18 an unknown mode is rejected", badMode);
-        const legacy = await tool.execute({}, session);
-        check("U19 no arguments still means the full report", legacy.mode === "full" && legacy.tokens !== null && legacy.context !== undefined);
-
-        // U20-U27: cache hit rate, low-cost notice, per-session baselines; budget is
-        // budget-watch's job — usage_report no longer accepts a budget at all.
-        check("U20 full report sums every token counter into total", report.tokens.total === 158200);
-        check("U21 full report computes the cache hit rate", Math.abs(report.hitRate - 0.2) < 1e-9 && report.lowCost === true);
-        check("U22 a low hit rate renders the low-cost instruction", tool.output.render({}, report)[0].text.includes("低成本"));
-        const budgeted = await tool.execute({ mode: "baseline", budget: 1000000 }, session);
-        check("U23 baseline ignores a budget argument entirely", budgeted.budget === undefined && budgeted.tokens.input === 120000);
-        check("U23b budget param is not in the schema", tool.parameters.properties.budget === undefined);
-        const used = await tool.execute({ mode: "delta" }, session);
-        check("U24 delta falls back to the stored per-session baseline", used.from === budgeted.iso && used.tokens.input === 0);
-        check("U25 delta carries no budget fields", used.budget === undefined && used.remaining === undefined && used.budgetPercentUsed === undefined);
-        let isolated = false;
-        try {
-            await tool.execute({ mode: "delta" }, { agent: { session: { id: "other-session" } } });
-        } catch (error) {
-            isolated = /needs a baseline/.test(error.message);
-        }
-        check("U26 each session keeps its own baseline", isolated);
-        const warmStates = {
-            sessionStats: states.sessionStats,
-            tokenUsage: { totals: { uncachedInputTokens: 100000, outputTokens: 1000, cacheReadTokens: 5000000, cacheWriteTokens: 0 }, last: null },
-            contextPressure: states.contextPressure,
-            contextBreakdown: states.contextBreakdown,
-        };
-        const warmHarness = hostHarness({}, { sessionProjections: { stateOf: (_session, key) => warmStates[key] } });
-        const warmTool = warmHarness.tools.find((entry) => entry.name === "usage_report");
-        const warm = await warmTool.execute({}, { agent: { session: { id: "warm" } } });
-        check(
-            "U27 a warm cache stays out of low-cost mode",
-            warm.hitRate > 0.98 && warm.lowCost === false && !warmTool.output.render({}, warm)[0].text.includes("低成本"),
-        );
-        check(
-            "U28 renders stay terse",
-            rendered.length < 240 && deltaRender.length < 120 && baselineRender.length < 400,
-            `full=${rendered.length} delta=${deltaRender.length} base=${baselineRender.length}`,
-        );
-    }
-    check("U11 inject declares tools and sessionProjections", host.inject.includes("tools") && host.inject.includes("sessionProjections"));
-}
-
 // ---- P: project_files tool (design paper public/插件/0017, v1 scope; renamed from project_fs per Owner 2026-10-25) ----
 {
     const { symlink, writeFile: wf, mkdir: md } = await import("node:fs/promises");
@@ -706,6 +584,25 @@ console.log("--- C. client half ---");
         check("P9b unknown op is a USAGE rejection", badOp);
         check("P9c description states the filesystem_manage division of labor", /filesystem_manage/u.test(tool.description));
     }
+}
+
+// P. Preset compatibility guard: 0.2.2 removed a subpath used by the old preset list
+// and deprecated the presentation selector. Keep the exact regressions from coming back.
+{
+    const preset = await readFile(join(here, "..", "cordis.patch.yml"), "utf8");
+    check(
+        "P10 preset does not mount removed list-agents subpath",
+        !preset.includes("@deepseek-ai/dsh-tool-subagent-control/list-agents"),
+    );
+    check(
+        "P11 preset does not mount deprecated tool-presentation",
+        !preset.includes("@deepseek-ai/dsh-agent-tool-presentation"),
+    );
+    check("P12 preset mounts the PTC executor directly", preset.includes("@deepseek-ai/dsh-tool-executor-ptc"));
+    check(
+        "P13 subagent uses 0.2.2 modelSelection keys",
+        preset.includes("modelSelection: true") && preset.includes("modelDiscovery: true") && !preset.includes("modelSelectionSettings"),
+    );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

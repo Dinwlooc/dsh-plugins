@@ -30,6 +30,10 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promi
 export const CODES = Object.freeze([
     "OK", "USAGE", "NOT_FOUND", "OUTSIDE_LIB", "PROTECTED",
     "NOT_READ", "STALE", "DELETE_FAILED", "MODEL_UNKNOWN", "IO_ERROR",
+    // Owner 2026-10-29: the sign tool can be switched OFF per project; the tool
+    // itself STAYS registered (unregistering changes the tool surface and burns
+    // the prompt cache), it just answers with this code + a skip instruction.
+    "SIGN_DISABLED",
 ]);
 
 /** Directories that only the library machinery or the owner may touch via tools. */
@@ -106,6 +110,18 @@ export function normalizeConfig(raw) {
             : Number.isInteger(c.revlogMaxLines) && c.revlogMaxLines > 0 ? c.revlogMaxLines // legacy key, one version
             : 8,
         routeMaxFiles: Number.isInteger(c.routeMaxFiles) && c.routeMaxFiles > 0 ? c.routeMaxFiles : 40,
+        // v3.1: the inventory call also returns the per-type must-read path plan.
+        inventoryPlan: c.inventoryPlan !== false,
+        // v3.2: type-independent must-read bodies are injected into the prompt.
+        bootstrap: c.bootstrap !== false,
+        bootstrapMaxChars: Number.isInteger(c.bootstrapMaxChars) && c.bootstrapMaxChars > 0 ? c.bootstrapMaxChars : 64000,
+        // Instance default for the per-project sign switch; the project file wins.
+        signEnabled: c.signEnabled !== false,
+        // v4: inject `.dsh/meta/<file>` into delegated children (REPLACES the parent
+        // prompt set). Instance defaults; the project file wins. The FILE NAME is
+        // Owner-visible config, editable in the Meta-tools settings column.
+        subagentPrompt: c.subagentPrompt !== false,
+        subagentPromptFile: normalizePromptFileName(c.subagentPromptFile),
         // Library root override; default = session working directory (resolveRootCfg).
         root: typeof c.root === "string" && c.root !== "" ? resolve(c.root) : undefined,
     };
@@ -123,8 +139,25 @@ export function libRoot(cfg) {
  * own .dsh) → process.cwd() at activation. Defensive: any shape or service
  * failure falls back silently to the static root.
  */
+/** Last workspace root actually used by a session; the settings column has no session. */
+let lastWorkspaceRoot;
+
+/** Remember a session's workspace so session-less HTTP routes scope to it. */
+export function rememberWorkspace(dir) {
+    if (typeof dir === "string" && dir !== "") lastWorkspaceRoot = dir;
+}
+
+/** cfg pinned to the last session workspace when no explicit root is configured. */
+export function workspaceScopedCfg(cfg) {
+    if (cfg.root !== undefined || lastWorkspaceRoot === undefined) return cfg;
+    return { ...cfg, root: lastWorkspaceRoot };
+}
+
 export async function resolveRootCfg(ctx, exec, cfg) {
-    if (cfg.root !== undefined) return cfg;
+    if (cfg.root !== undefined) {
+        rememberWorkspace(cfg.root);
+        return cfg;
+    }
     try {
         const directories = ctx?.get?.("workingDirectory");
         if (typeof directories?.ensure !== "function") return cfg;
@@ -134,7 +167,10 @@ export async function resolveRootCfg(ctx, exec, cfg) {
         const path = typeof dir === "string"
             ? dir
             : dir?.path ?? dir?.directory ?? dir?.root ?? dir?.cwd;
-        if (typeof path === "string" && path !== "") return { ...cfg, root: path };
+        if (typeof path === "string" && path !== "") {
+            rememberWorkspace(path);
+            return { ...cfg, root: path };
+        }
     } catch { /* fall back to the static root */ }
     return cfg;
 }
@@ -212,6 +248,15 @@ export async function scaffold(cfg) {
         await writeFile(join(base, ".tmp", "meta-tools-scaffold.json"), JSON.stringify(record, null, 2), "utf8");
     } catch { /* scratch write is best-effort */ }
     return record;
+}
+
+/** Same predicate the loader uses: a readable regular file, not a directory. */
+async function isRegularFile(abs) {
+    try {
+        return (await stat(abs)).isFile();
+    } catch {
+        return false;
+    }
 }
 
 async function missingDir(dir) {
@@ -365,8 +410,24 @@ export async function removeTaskType(cfg, name) {
     });
 }
 
+/** Default file name of the child-only prompt set, relative to `.dsh/meta/`. */
+export const SUBAGENT_FILE_DEFAULT = "SUBAGENTS.md";
+
+/** Sanitize an Owner-chosen prompt file name: one flat `.md` name, never a path. */
+export function normalizePromptFileName(name) {
+    if (typeof name !== "string") return SUBAGENT_FILE_DEFAULT;
+    const trimmed = name.trim();
+    if (trimmed === "" || trimmed.length > 120) return SUBAGENT_FILE_DEFAULT;
+    if (!/^[\w.-]+\.md$/i.test(trimmed)) return SUBAGENT_FILE_DEFAULT;
+    return trimmed;
+}
+
+/** `.dsh/public/` folders that are INJECTED prompt sets, never routable task types. */
+const RESERVED_PUBLIC_NO_TASK = new Set(["meta"]);
+
 /** Effective routable types: (theme/preset ∪ adopted public/ dirs ∪ active) − removed.
- * Tombstone wins over every other source; "meta" is the reserved strong-load folder. */
+ * Tombstone wins over every other source; "meta" is the reserved strong-load
+ * folder. (The child-only prompt lives in .dsh/meta/<configured>.md, not in public/.) */
 export async function composeTaskTypes(cfg) {
     const base = libRoot(cfg);
     const reg = await readTaskTypeRegistry(cfg);
@@ -377,7 +438,7 @@ export async function composeTaskTypes(cfg) {
         for (const entry of await readdir(join(base, "public"), { withFileTypes: true })) {
             // "meta" is the RESERVED strong-loaded folder (Owner ruling 2026-10-27:
             // 中文"元层"=task type, meta=strong-loaded prompts) — never a task type.
-            if (entry.isDirectory() && entry.name !== "meta" && !removed.has(entry.name)) types.add(entry.name);
+            if (entry.isDirectory() && !RESERVED_PUBLIC_NO_TASK.has(entry.name) && !removed.has(entry.name)) types.add(entry.name);
         }
     } catch { /* no public dir yet */ }
     for (const t of reg.active) types.add(t);
@@ -444,6 +505,96 @@ export async function setThemes(cfg, themes) {
     return themeState(cfg);
 }
 
+/**
+ * Full state for the Meta-tools Settings section (Owner 2026-10-29: one
+ * independent config column instead of a card buried in General).
+ * Live theme cells + the project-level sign switch + where it is stored.
+ */
+export async function metaSettingsState(cfg) {
+    const state = await themeState(cfg);
+    const pcfg = await readProjectConfig(cfg, {
+        revlogEntries: cfg.revlogEntries ?? 8,
+        signEnabled: cfg.signEnabled !== false,
+        bootstrapSubagents: cfg.bootstrapSubagents === true,
+        subagentPrompt: cfg.subagentPrompt !== false,
+        subagentPromptFile: cfg.subagentPromptFile ?? SUBAGENT_FILE_DEFAULT,
+    });
+    state.signEnabled = pcfg.signEnabled;
+    state.bootstrapSubagents = pcfg.bootstrapSubagents === true;
+    state.subagentPrompt = pcfg.subagentPrompt !== false;
+    state.subagentPromptFile = normalizePromptFileName(pcfg.subagentPromptFile);
+    // The Settings column must never claim "on" while the child gets nothing.
+    state.subagentPromptPresent = await isRegularFile(join(libRoot(workspaceScopedCfg(cfg)), "meta", state.subagentPromptFile));
+    state.revlogEntries = pcfg.revlogEntries;
+    state.storage = ".dsh/meta/config.json";
+    if (pcfg.configWarning !== undefined) state.configWarning = pcfg.configWarning;
+    return state;
+}
+
+/**
+ * Turn the per-project sign switch on/off by editing `.dsh/meta/config.json`
+ * (read-modify-write, other keys preserved: revlogEntries + modelAliases).
+ *
+ * Refuses in a workspace that has no `.dsh` yet: creating `.dsh/meta/` here
+ * would flip hasDsh() and silently cancel theme auto-apply for the first
+ * scaffold — an unrelated setting must not change provisioning semantics.
+ */
+async function setProjectFlag(cfg, key, value) {
+    if (typeof value !== "boolean") throw new Error(key + " must be a boolean");
+    const base = libRoot(workspaceScopedCfg(cfg));
+    if (await missingDir(base)) {
+        const error = new Error("this workspace has no .dsh library yet — run meta_route before changing project settings");
+        error.code = "NO_LIBRARY";
+        throw error;
+    }
+    const metaDir = join(base, "meta");
+    const file = join(metaDir, "config.json");
+    let raw = {};
+    try { raw = JSON.parse(await readFile(file, "utf8")); } catch { raw = {}; }
+    const next = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    next[key] = value;
+    if (next.version === undefined) next.version = 1;
+    await mkdir(metaDir, { recursive: true });
+    await writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`);
+    return metaSettingsState(cfg);
+}
+
+/** Children ALSO get the parent `public/meta` prefix (fallback when no child-only set exists). */
+export async function setBootstrapSubagents(cfg, value) {
+    return setProjectFlag(cfg, "bootstrapSubagents", value);
+}
+
+/** v4: inject `.dsh/meta/<configured file>` into every delegated child (replaces the parent prompt set). */
+export async function setSubagentPrompt(cfg, value) {
+    return setProjectFlag(cfg, "subagentPrompt", value);
+}
+
+/** v4: the Owner-visible child prompt FILE NAME (flat `.md` under `.dsh/meta/`). */
+export async function setSubagentPromptFile(cfg, value) {
+    if (typeof value !== "string" || value.trim() === "") throw new Error("subagentPromptFile must be a non-empty string");
+    const base = libRoot(workspaceScopedCfg(cfg));
+    if (await missingDir(base)) {
+        const error = new Error("this workspace has no .dsh library yet — run meta_route before changing project settings");
+        error.code = "NO_LIBRARY";
+        throw error;
+    }
+    const metaDir = join(base, "meta");
+    const file = join(metaDir, "config.json");
+    let raw = {};
+    try { raw = JSON.parse(await readFile(file, "utf8")); } catch { raw = {}; }
+    const next = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    next.subagentPromptFile = normalizePromptFileName(value);
+    if (next.version === undefined) next.version = 1;
+    await mkdir(metaDir, { recursive: true });
+    await writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`);
+    return metaSettingsState(cfg);
+}
+
+/** Per-PROJECT sign switch; the tool stays registered and answers SIGN_DISABLED. */
+export async function setSignEnabled(cfg, value) {
+    return setProjectFlag(cfg, "signEnabled", value);
+}
+
 /** List .md files (bodies only, no revlogs) directly inside a directory, sorted. */
 export async function listBodies(dir) {
     let entries;
@@ -491,19 +642,36 @@ export async function appendRevlog(absBodyPath, line, maxEntries) {
 
 /**
  * Project-level meta config (v3): .dsh/meta/config.json — model-editable.
- * { version, revlogEntries } — live-read per call, clamped 1..200; missing or
- * invalid values fall back to `fallback` with a warning, never throw.
+ * { version, revlogEntries, modelAliases, signEnabled } — live-read per call,
+ * revlog cap clamped 1..200; missing or invalid values fall back to `fallback`
+ * with a warning, never throw.
+ *
+ * `signEnabled` (Owner 2026-10-29): the sign tool's per-PROJECT switch.
+ *   - boolean in the project file -> wins (the Settings section writes it)
+ *   - absent / non-boolean        -> `fallback.signEnabled` (patch config, default true)
+ * The tool stays registered either way; only its answer changes.
  */
 export async function readProjectConfig(cfg, fallback = {}) {
-    const result = { ...fallback, configWarning: undefined, modelAliases: {} };
+    const result = {
+        ...fallback,
+        signEnabled: fallback.signEnabled !== false,
+        configWarning: undefined,
+        modelAliases: {},
+    };
     try {
-        const raw = JSON.parse(await readFile(join(libRoot(cfg), "meta", "config.json"), "utf8"));
+        const raw = JSON.parse(await readFile(join(libRoot(workspaceScopedCfg(cfg)), "meta", "config.json"), "utf8"));
         const entries = raw?.revlogEntries;
         if (Number.isInteger(entries) && entries >= 1 && entries <= 200) {
             result.revlogEntries = entries;
         } else {
             result.configWarning = `revlogEntries invalid (${JSON.stringify(entries) ?? "missing"}) — using ${fallback.revlogEntries}`;
         }
+        if (typeof raw?.signEnabled === "boolean") result.signEnabled = raw.signEnabled;
+        // v4 (Owner 2026-11-04): the two subagent switches are project-file truth, so
+        // the Settings column must read the FILE, not the instance fallback.
+        if (typeof raw?.bootstrapSubagents === "boolean") result.bootstrapSubagents = raw.bootstrapSubagents;
+        if (typeof raw?.subagentPrompt === "boolean") result.subagentPrompt = raw.subagentPrompt;
+        if (typeof raw?.subagentPromptFile === "string") result.subagentPromptFile = raw.subagentPromptFile;
         // Identity aliases are independent of revlogEntries: a bad cap must not
         // silently drop a valid alias table (and vice versa).
         result.modelAliases = normalizeAliases(raw?.modelAliases);

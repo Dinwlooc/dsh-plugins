@@ -26,6 +26,7 @@ import {
     composeTaskTypes, libRoot, listBodies, modelLibraryPath, readFileText,
     readProjectConfig, readTaskTypeRegistry, resolveModelIdentity, resolveRootCfg,
 } from "./library.js";
+import { MESSAGES, render } from "./messages.js";
 import { modelOfSession } from "./model-map.js";
 
 function agentSessionOf(exec) {
@@ -41,7 +42,7 @@ const KNOWLEDGE_BASE = ".dsh/public";
 
 /** GUI rendering of a route result: content-parts array (harness calls .some on it). */
 function renderRoute(_args, value) {
-    if (value.code !== "OK") return [{ type: "text", text: `meta_route ${value.code}` }];
+    if (value.code !== "OK") return [{ type: "text", text: render(MESSAGES.routeError, { code: value.code }) }];
     // Show the alias when one applied: the model must SEE that another model's
     // library is what it just routed to (identity is a config fact, not a guess).
     const who = value.aliasOf === undefined || value.aliasOf === null
@@ -49,20 +50,91 @@ function renderRoute(_args, value) {
         : `${value.model} -> ${value.identity} (alias)`;
     if (!value.mustRead) {
         if (value.setup) {
-            return [{ type: "text", text: `meta_route: model=${who} no task types | setup: ${value.setup.steps.join(" → ")} | library=${value.modelDir}` }];
+            return [{ type: "text", text: render(MESSAGES.routeSetup, {
+                who, steps: value.setup.steps.join(" → "), dir: value.modelDir,
+            }) }];
         }
-        return [{ type: "text", text: `meta_route: model=${who} taskTypes=[${value.taskTypes.join(", ")}] | knowledge=${value.knowledgeBase} (search after taskType) | library=${value.modelDir}` }];
+        const plan = value.plan;
+        if (plan !== undefined) {
+            const perType = value.taskTypes
+                .map((t) => `${t}: ${(plan.perType[t] ?? []).join(", ") || "(none)"}`)
+                .join(" | ");
+            return [{ type: "text", text: render(MESSAGES.routePlan, {
+                who,
+                types: value.taskTypes.join(", "),
+                shared: plan.shared.join(", ") || "(none)",
+                perType,
+                kb: value.knowledgeBase,
+                dir: value.modelDir,
+                // public/meta bodies are already in the system prompt (v3.2).
+                boot: plan.bootstrapInjected ? " (public/meta already in the system prompt — do not re-read)" : "",
+                opt: plan.omitted > 0 ? ` | +${plan.omitted} beyond cap` : "",
+            }) }];
+        }
+        return [{ type: "text", text: render(MESSAGES.routeList, {
+            who, types: value.taskTypes.join(", "), kb: value.knowledgeBase, dir: value.modelDir,
+        }) }];
     }
     const files = value.mustRead.map((m) => m.path).join(", ");
     const opt = value.omitted > 0 ? ` (+${value.omitted} beyond cap)` : "";
-    return [{ type: "text", text: `meta_route: ${who}/${value.taskType} must-read ${value.mustRead.length}: ${files}${opt} | knowledge: search ${value.knowledgeBase}/${value.taskType}` }];
+    return [{ type: "text", text: render(MESSAGES.routeMustRead, {
+        who, taskType: value.taskType, n: value.mustRead.length, files, opt, kb: value.knowledgeBase,
+    }) }];
+}
+
+/** Workspace-relative path WITH the .dsh/ prefix (the model opens it with the native read tool). */
+function relPath(base, abs) {
+    return relative(dirname(base), abs).replace(/\\/g, "/");
+}
+
+/** The same directory scan the routing call uses, split into the SHARED part
+ * (public/meta + the model's meta.md + meta/) and the per-task-type part
+ * (<model>/<type> + public/<type>). Prompt bodies only — knowledge papers stay
+ * search-only. */
+async function collectDir(dir, budget) {
+    const out = [];
+    for (const name of await listBodies(dir)) {
+        if (PAPER_RE.test(name)) continue;
+        const abs = join(dir, name);
+        if (!existsSync(abs)) continue;
+        if (budget.left <= 0) { budget.omitted++; continue; }
+        budget.left--;
+        out.push(abs);
+    }
+    return out;
+}
+
+/**
+ * Cold-start plan (v3.1): one inventory call already carries the must-read
+ * PATHS for every routable type, so the model usually skips the second call.
+ * Bodies are still never inlined; line counts stay in the routing call.
+ */
+export async function buildPlan(rcfg, base, modelRoot, types, skipPublicMeta = false) {
+    const budget = { left: rcfg.routeMaxFiles, omitted: 0 };
+    const shared = [];
+    const sharedDirs = [join(base, "public", "meta"), modelRoot, join(modelRoot, "meta")];
+    for (const dir of sharedDirs) {
+        // v3.2: with the bootstrap section on, public/meta bodies are already in
+        // the system prompt — listing them again would pay for them twice.
+        if (skipPublicMeta && dir === sharedDirs[0]) continue;
+        for (const abs of await collectDir(dir, budget)) shared.push(relPath(base, abs));
+    }
+    const perType = {};
+    for (const t of types) {
+        const list = [];
+        for (const dir of [join(modelRoot, t), join(base, "public", t)]) {
+            for (const abs of await collectDir(dir, budget)) list.push(relPath(base, abs));
+        }
+        perType[t] = list;
+    }
+    return { shared, perType, omitted: budget.omitted };
 }
 
 export function createMetaRouteTool(ctx, cfg) {
     return {
         name: "meta_route",
         description:
-            "Meta-layer routing for this workspace's prompt & knowledge library (.dsh). When the session model is aliased (meta_alias / .dsh/meta/config.json modelAliases) routing uses the IDENTITY library and the result reports model -> identity (alias). Call once with no arguments to list the routable task types, this model's library dir, and the knowledge-base entry (articles are NOT listed; search them after routing). If the project has no task types, the inventory returns setup steps for meta_tasktype. Call again with taskType to receive the must-read PROMPT/细则 file paths (workspace-relative, open with your native read tool); knowledge papers are excluded and should be found with grep/project_files find.",
+            "Meta-layer routing for this workspace's prompt & knowledge library (.dsh). When the session model is aliased (meta_alias / .dsh/meta/config.json modelAliases) routing uses the IDENTITY library and the result reports model -> identity (alias). Call once with no arguments to list the routable task types, this model's library dir, and the knowledge-base entry (articles are NOT listed; search them after routing). If the project has no task types, the inventory returns setup steps for meta_tasktype. The inventory also returns the must-read path plan for every type: plan.shared plus plan.perType[yourType], workspace-relative, open them with your native read tool. Call again with taskType only when you need line counts or a re-checked route; knowledge papers are excluded and should be found with grep/project_files find.",
         parameters: {
             type: "object",
             additionalProperties: false,
@@ -125,9 +197,19 @@ export function createMetaRouteTool(ctx, cfg) {
                         },
                     };
                 }
+                // v3.1 (Owner ask 2026-10-31): the inventory carries the path plan
+                // for EVERY type, so one call is normally enough. The routing call
+                // stays for line counts and for an explicit, re-checked route.
+                const injected = cfg.bootstrap !== false;
+                const plan = cfg.inventoryPlan === false
+                    ? undefined
+                    : { ...(await buildPlan(rcfg, base, modelRoot, types, injected)), bootstrapInjected: injected };
                 return {
                     ...inventory,
-                    nextHint: "call again with taskType=<one of taskTypes> to receive must-read paths",
+                    ...(plan === undefined ? {} : { plan }),
+                    nextHint: plan === undefined
+                        ? "call again with taskType=<one of taskTypes> to receive must-read paths"
+                        : "read plan.shared plus plan.perType[yourType] with the native read tool; call meta_route {taskType} only when you need line counts",
                 };
             }
 

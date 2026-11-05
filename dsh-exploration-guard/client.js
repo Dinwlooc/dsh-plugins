@@ -1,185 +1,93 @@
-// dsh-exploration-guard — Client half (browser).
-// 注册到 settings.section：读/写宿主 /exploration-guard/api/config。
-// 手写客户端模块（无构建）：走 DSH 的 client-modules 握手 window.__ModuleLoader__.load。
+/**
+ * dsh-exploration-guard — client half: Settings section with live editable knobs.
+ * Registration follows the verified settings.section form (same as dsh-meta-tools).
+ * Data path: GET/POST /api/exploration-guard/config (whole-object patch; unknown keys are rejected).
+ */
 window.__ModuleLoader__.load({
-  id: 'dsh-exploration-guard',
-  factory(require) {
-    const React = require('react');
-    const h = React.createElement;
-
-    const API = '/exploration-guard/api/config';
-
-    const STR = {
-      zh: {
-        title: '探索熔断',
-        subtitle: '连续若干 step 没有推进任务节点时，先拦非进度工具，再只留记录与求助。',
-        enabled: '启用',
-        soft: '软阈值（step）',
-        hard: '硬阈值（step）',
-        noTask: '无任务清单时',
-        noTaskCount: '同样计时',
-        noTaskSkip: '不计时',
-        resetOnIdle: '等待 Owner 时清零',
-        save: '保存',
-        saving: '保存中…',
-        saved: '已保存（即时生效）',
-        failed: '保存失败',
-        loading: '读取中…',
-        softHint: '距上次任务进展超过这么多步，开始否决非进度工具。',
-        hardHint: '超过这么多步后只允许更新任务/目标或向 Owner 求助。',
-        file: '存储',
-      },
-      en: {
-        title: 'Exploration Brake',
-        subtitle: 'When N loop steps pass without advancing a task node, non-progress tools are denied; then only recording and asking stay open.',
-        enabled: 'Enabled',
-        soft: 'Soft threshold (steps)',
-        hard: 'Hard threshold (steps)',
-        noTask: 'With no task list',
-        noTaskCount: 'Count as no progress',
-        noTaskSkip: "Don't count",
-        resetOnIdle: 'Reset while waiting for Owner',
-        save: 'Save',
-        saving: 'Saving…',
-        saved: 'Saved (applies immediately)',
-        failed: 'Save failed',
-        loading: 'Loading…',
-        softHint: 'Steps since the last task advance before non-progress tools are denied.',
-        hardHint: 'Beyond this many steps only task/goal updates and asking the Owner are allowed.',
-        file: 'Stored at',
-      },
-    };
-
-    function pickLocale() {
-      try {
-        const lang = (document.documentElement.getAttribute('lang') || navigator.language || 'en').toLowerCase();
-        return lang.startsWith('zh') ? 'zh' : 'en';
-      } catch {
-        return 'en';
-      }
-    }
-
-    const C = {
-      card: { display: 'flex', flexDirection: 'column', gap: '14px', padding: '18px 20px', border: '1px solid var(--dsh-color-border, rgba(127,127,127,.25))', borderRadius: '12px', background: 'var(--dsh-color-surface, transparent)' },
-      head: { display: 'flex', flexDirection: 'column', gap: '4px' },
-      title: { fontSize: '15px', fontWeight: 600 },
-      sub: { fontSize: '12px', lineHeight: 1.5, opacity: 0.72 },
-      row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' },
-      label: { display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' },
-      hint: { fontSize: '11px', opacity: 0.6 },
-      input: { width: '92px', padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--dsh-color-border, rgba(127,127,127,.35))', background: 'transparent', color: 'inherit', fontSize: '13px' },
-      select: { padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--dsh-color-border, rgba(127,127,127,.35))', background: 'transparent', color: 'inherit', fontSize: '13px' },
-      toggle: { padding: '6px 14px', borderRadius: '999px', border: '1px solid var(--dsh-color-border, rgba(127,127,127,.35))', background: 'transparent', color: 'inherit', fontSize: '12px', cursor: 'pointer', minWidth: '64px' },
-      footer: { display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' },
-      save: { padding: '7px 18px', borderRadius: '9px', border: '1px solid var(--dsh-color-accent, #247bbf)', background: 'var(--dsh-color-accent, #247bbf)', color: '#fff', fontSize: '13px', cursor: 'pointer' },
-      status: { fontSize: '12px', opacity: 0.7 },
-      file: { fontSize: '11px', opacity: 0.5, wordBreak: 'break-all' },
-    };
-
-    function Panel() {
-      const lang = pickLocale();
-      const t = STR[lang];
-      const [config, setConfig] = React.useState(null);
-      const [status, setStatus] = React.useState('');
-      const [busy, setBusy] = React.useState(false);
-      const [file, setFile] = React.useState('');
-
-      React.useEffect(function () {
-        let alive = true;
-        fetch(API, { headers: { accept: 'application/json' } })
-          .then(function (r) { return r.json(); })
-          .then(function (body) {
-            if (!alive || !body || !body.config) return;
-            setConfig(body.config);
-            setFile(body.file || '');
-          })
-          .catch(function () { if (alive) setStatus(t.failed); });
-        return function () { alive = false; };
-      }, []);
-
-      function patch(key, value) {
-        setConfig(function (prev) { return Object.assign({}, prev, { [key]: value }); });
-      }
-
-      function save() {
-        if (!config) return;
-        setBusy(true);
-        setStatus(t.saving);
-        fetch(API, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(config),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (body) {
-            if (body && body.config) setConfig(body.config);
-            if (body && body.file) setFile(body.file);
-            setStatus(body && body.ok ? t.saved : t.failed);
-          })
-          .catch(function () { setStatus(t.failed); })
-          .then(function () { setBusy(false); });
-      }
-
-      if (!config) return h('div', { style: C.card }, h('div', { style: C.title }, t.title), h('div', { style: C.sub }, status || t.loading));
-
-      return h('div', { style: C.card },
-        h('div', { style: C.head },
-          h('div', { style: C.title }, t.title),
-          h('div', { style: C.sub }, t.subtitle)),
-
-        h('div', { style: C.row },
-          h('div', { style: C.label }, h('span', null, t.enabled)),
-          h('button', {
-            style: Object.assign({}, C.toggle, config.enabled ? { borderColor: 'var(--dsh-color-accent, #247bbf)', color: 'var(--dsh-color-accent, #247bbf)' } : {}),
-            onClick: function () { patch('enabled', !config.enabled); },
-          }, config.enabled ? 'ON' : 'OFF')),
-
-        h('div', { style: C.row },
-          h('div', { style: C.label }, h('span', null, t.soft), h('span', { style: C.hint }, t.softHint)),
-          h('input', {
-            style: C.input, type: 'number', min: 1, max: 500, value: String(config.softSteps),
-            onChange: function (event) { patch('softSteps', Number(event.target.value)); },
-          })),
-
-        h('div', { style: C.row },
-          h('div', { style: C.label }, h('span', null, t.hard), h('span', { style: C.hint }, t.hardHint)),
-          h('input', {
-            style: C.input, type: 'number', min: 1, max: 500, value: String(config.hardSteps),
-            onChange: function (event) { patch('hardSteps', Number(event.target.value)); },
-          })),
-
-        h('div', { style: C.row },
-          h('div', { style: C.label }, h('span', null, t.noTask)),
-          h('select', {
-            style: C.select, value: config.noTaskMode,
-            onChange: function (event) { patch('noTaskMode', event.target.value); },
-          },
-            h('option', { value: 'count' }, t.noTaskCount),
-            h('option', { value: 'skip' }, t.noTaskSkip))),
-
-        h('div', { style: C.row },
-          h('div', { style: C.label }, h('span', null, t.resetOnIdle)),
-          h('button', {
-            style: Object.assign({}, C.toggle, config.resetOnIdle ? { borderColor: 'var(--dsh-color-accent, #247bbf)', color: 'var(--dsh-color-accent, #247bbf)' } : {}),
-            onClick: function () { patch('resetOnIdle', !config.resetOnIdle); },
-          }, config.resetOnIdle ? 'ON' : 'OFF')),
-
-        h('div', { style: C.footer },
-          h('span', { style: C.status }, status),
-          h('button', { style: Object.assign({}, C.save, busy ? { opacity: 0.6 } : {}), disabled: busy, onClick: save }, busy ? t.saving : t.save)),
-
-        file ? h('div', { style: C.file }, t.file + ' ' + file) : null);
-    }
-
-    return {
-      inject: ['slots'],
-      apply(ctx) {
-        ctx.slots.inject('settings.section', function () {
-          ctx.slots.register(
-            { name: 'settings.section', id: 'exploration-guard', order: 640, label: (pickLocale() === 'zh' ? '探索熔断' : 'Exploration Brake') },
-            function () { return h(Panel); });
-        });
-      },
-    };
-  },
+    id: "dsh-exploration-guard",
+    factory: (require) => {
+        const react = require("react");
+        const h = react.createElement;
+        const API = "/api/exploration-guard/config";
+        const STYLE_ID = "dsh-exploration-guard/styles";
+        const CSS = ".st-card{display:flex;flex-direction:column;gap:12px;padding:18px 20px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.28));border-radius:12px}.st-title{font-size:15px;font-weight:650}.st-sub{font-size:12px;line-height:1.5;color:#e6ebf1}.st-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 0;border-top:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.18))}.st-label{display:flex;flex-direction:column;gap:2px;font-size:13px}.st-hint{font-size:11px;line-height:1.5;color:#e6ebf1;max-width:52ch}.st-toggle{flex:none;min-width:64px;padding:6px 14px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));border-radius:999px;background:transparent;cursor:pointer;font-size:12px;color:inherit}.st-toggle[data-on=true]{border-color:var(--dsw-alias-state-success-primary,#2f9e6b);color:var(--dsw-alias-state-success-primary,#2f9e6b)}.st-input{flex:none;width:180px;height:28px;padding:0 8px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));border-radius:7px;background:transparent;color:inherit;font:inherit;font-size:12px}.st-err{font-size:12px;color:var(--dsw-alias-state-error-primary,#d2544d)}";
+        function ensureStyle() {
+            if (document.getElementById(STYLE_ID) !== null) return;
+            const el = document.createElement("style");
+            el.id = STYLE_ID;
+            el.textContent = CSS;
+            document.head.appendChild(el);
+        }
+        function post(patch, done) {
+            fetch(API, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(patch) })
+                .then((r) => r.json())
+                .then((json) => done(json))
+                .catch((error) => done({ ok: false, error: String(error && error.message ? error.message : error) }));
+        }
+        function asText(value) {
+            if (Array.isArray(value)) return value.join(", ");
+            return value === null || value === undefined ? "" : String(value);
+        }
+        function Row(props) {
+            const field = props.field;
+            const value = props.value;
+            const commit = (next) => { if (JSON.stringify(next) !== JSON.stringify(value)) props.onSave(field.key, next); };
+            let control;
+            if (field.type === "boolean") {
+                control = h("button", { className: "st-toggle", "data-on": value === true ? "true" : "false", disabled: props.busy, onClick: () => commit(!(value === true)) }, value === true ? "已开" : "已关");
+            } else if (field.type === "enum") {
+                control = h("select", { className: "st-input", value: asText(value), disabled: props.busy, onChange: (e) => commit(e.target.value) },
+                    (field.options || []).map((option) => h("option", { key: option.value, value: option.value }, option.label || option.value)));
+            } else if (field.type === "number") {
+                control = h("input", { className: "st-input", type: "number", defaultValue: asText(value), min: field.min, max: field.max, disabled: props.busy, onBlur: (e) => commit(Number(e.target.value)), onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); } });
+            } else if (field.type === "numberList") {
+                control = h("input", { className: "st-input", type: "text", defaultValue: asText(value), disabled: props.busy, onBlur: (e) => commit(String(e.target.value).split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))), onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); } });
+            } else if (field.type === "stringList") {
+                control = h("input", { className: "st-input", type: "text", defaultValue: asText(value), disabled: props.busy, onBlur: (e) => commit(String(e.target.value).split(",").map((s) => s.trim()).filter(Boolean)), onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); } });
+            } else {
+                control = h("input", { className: "st-input", type: "text", defaultValue: asText(value), disabled: props.busy, onBlur: (e) => commit(String(e.target.value)), onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); } });
+            }
+            return h("div", { className: "st-row" },
+                h("div", { className: "st-label" }, h("span", null, field.label || field.key), field.hint ? h("span", { className: "st-hint" }, field.hint) : null),
+                control);
+        }
+        function Panel() {
+            ensureStyle();
+            const [state, setState] = react.useState(null);
+            const [error, setError] = react.useState(null);
+            const [busy, setBusy] = react.useState(false);
+            react.useEffect(() => {
+                let live = true;
+                fetch(API, { headers: { accept: "application/json" } })
+                    .then((r) => r.json())
+                    .then((json) => { if (live) setState(json); })
+                    .catch((err) => { if (live) setError(String(err && err.message ? err.message : err)); });
+                return () => { live = false; };
+            }, []);
+            if (error !== null) return h("div", { className: "st-card" }, h("div", { className: "st-err" }, error));
+            if (state === null || state.ok !== true) return h("div", { className: "st-card" }, h("div", { className: "st-sub" }, "读取中…"));
+            const save = (key, value) => {
+                setBusy(true);
+                post({ [key]: value }, (json) => {
+                    setBusy(false);
+                    if (json && json.ok === true) { setState(json); setError(null); }
+                    else setError(String(json && json.error ? json.error : "保存失败"));
+                });
+            };
+            return h("div", { className: "st-card" },
+                h("div", { className: "st-title" }, "探索熔断"),
+                h("div", { className: "st-sub" }, "改动即时生效并写入 ~/.dsh/dsh-exploration-guard/config.json；开关不改变工具面。"),
+                error !== null ? h("div", { className: "st-err" }, error) : null,
+                state.fields.map((field) => h(Row, { key: field.key, field, value: state.values[field.key], onSave: save, busy })));
+        }
+        const inject = ["slots"];
+        function apply(ctx) {
+            if (!ctx || !ctx.slots) return;
+            if (typeof ctx.effect === "function") ctx.effect(ensureStyle, "dsh-exploration-guard: styles");
+            else ensureStyle();
+            ctx.slots.inject("settings.section", () =>
+                ctx.slots.register({ name: "settings.section", id: "dsh-exploration-guard", order: 650, label: "探索熔断" }, () => h(Panel)));
+        }
+        return { inject, apply };
+    },
 });

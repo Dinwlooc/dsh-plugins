@@ -20,6 +20,7 @@ import {
     resolveRootCfg, revlogPathFor, sha256,
 } from "./library.js";
 import { modelOfSession } from "./model-map.js";
+import { MESSAGES, render } from "./messages.js";
 
 function agentSessionOf(exec) {
     const a = exec?.agent;
@@ -30,16 +31,30 @@ function agentSessionOf(exec) {
 
 const fail = (code, extra = {}) => ({ code, ...extra });
 
+/**
+ * Owner 2026-10-29: signing can be switched OFF per project from the Meta-tools
+ * settings column. The tool is NEVER unregistered (a changing tool surface
+ * invalidates the prompt cache), so "off" is an ANSWER, not a removal — and the
+ * answer must not leak into the visible reply: the model skips signing silently.
+ */
+export const SIGN_DISABLED_TEXT = MESSAGES.signDisabled;
+
 function renderSign(_args, value) {
-    if (value.code !== "OK") return [{ type: "text", text: `meta_sign ${value.code}` }];
-    return [{ type: "text", text: `meta_sign: ${value.path}${value.unchanged ? " (unchanged)" : ""} revlog=${value.revlog.entries} entries${value.droppedOldest > 0 ? `, dropped ${value.droppedOldest}` : ""}` }];
+    if (value.code === "SIGN_DISABLED") return [{ type: "text", text: SIGN_DISABLED_TEXT }];
+    if (value.code !== "OK") return [{ type: "text", text: render(MESSAGES.signError, { code: value.code }) }];
+    return [{ type: "text", text: render(MESSAGES.signOk, {
+        path: value.path,
+        unchanged: value.unchanged ? " (unchanged)" : "",
+        entries: value.revlog.entries,
+        dropped: value.droppedOldest > 0 ? `, dropped ${value.droppedOldest}` : "",
+    }) }];
 }
 
 export function createMetaSignTool(ctx, cfg) {
     return {
         name: "meta_sign",
         description:
-            "签发 — records a revision note; it does NOT edit the file. After you write or edit a meta-layer file under .dsh/ with your native write/edit tools, call this on that file: it appends a timestamp + your model name + revisionBasis line to the companion .revlog.md (cap from .dsh/meta/config.json revlogEntries, default 8, oldest dropped). path may be workspace-relative (incl. or excl. .dsh/) or absolute inside .dsh; revisionBasis is required (Owner quote or observed problem).",
+            "Records a revision note; it does NOT edit the file. Call it only when the project's own rules ask for a signing record: it appends a timestamp + your model name + revisionBasis line to the companion .revlog.md of a file under .dsh/ (cap from .dsh/meta/config.json revlogEntries, default 8, oldest dropped). This plugin does not require signing; a project may forbid it (the call then answers SIGN_DISABLED and you skip silently). path may be workspace-relative (incl. or excl. .dsh/) or absolute inside .dsh; revisionBasis is required (Owner quote or observed problem).",
         parameters: {
             type: "object",
             additionalProperties: false,
@@ -52,12 +67,19 @@ export function createMetaSignTool(ctx, cfg) {
         output: { schema: { type: "object" }, render: (args, value) => renderSign(args, value) },
         async execute(args, exec) {
             const model = modelOfSession(ctx, agentSessionOf(exec));
-            if (model === null) return fail("MODEL_UNKNOWN", { hint: "no request/context seen yet for this session; retry after your next turn starts" });
-            if (typeof args?.path !== "string" || args.path.trim() === "") return fail("USAGE", { hint: "path is required" });
+            const rcfg = await resolveRootCfg(ctx, exec, cfg);
+            const pcfg = await readProjectConfig(rcfg, {
+                revlogEntries: cfg.revlogEntries ?? 8,
+                signEnabled: cfg.signEnabled !== false,
+            });
+            // Disabled wins over every argument check: a call while off must cost
+            // one cheap answer, not a misleading USAGE/NOT_FOUND diagnosis.
+            if (pcfg.signEnabled === false) return { code: "SIGN_DISABLED" };
+            if (model === null) return fail("MODEL_UNKNOWN", { hint: MESSAGES.hintModelUnknown });
+            if (typeof args?.path !== "string" || args.path.trim() === "") return fail("USAGE", { hint: MESSAGES.hintPathRequired });
             if (typeof args?.revisionBasis !== "string" || args.revisionBasis.trim() === "") {
                 return fail("USAGE", { hint: "revisionBasis (Owner quote or observed problem) is required" });
             }
-            const rcfg = await resolveRootCfg(ctx, exec, cfg);
             // Accept "x.md", ".dsh/x.md", and absolute-inside-.dsh shapes.
             let raw = args.path.trim().replace(/\\/g, "/");
             if (/^\.dsh\//i.test(raw)) raw = raw.slice(5);
@@ -86,7 +108,6 @@ export function createMetaSignTool(ctx, cfg) {
                 if (last !== undefined && last.includes(`sha=${hash}`)) unchanged = true;
             }
 
-            const pcfg = await readProjectConfig(rcfg, { revlogEntries: cfg.revlogEntries ?? 8 });
             const lines = text === null ? 0 : text.split(/\r?\n/).length;
             const note = typeof args.note === "string" && args.note.trim() !== "" ? ` | ${args.note.trim()}` : "";
             const rev = await appendRevlog(

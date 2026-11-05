@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Request Guard",
+    "description": "Keeps a malformed request from wedging a session: fills empty tool-call ids, repairs the outbound message array, and retries a pairing 400 once."
+  }
+}

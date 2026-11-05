@@ -25,6 +25,7 @@
 // Every layer fails open: a repair error must never break a working request.
 
 import { repairMessages } from './lib/repair.js';
+import { overlayStored, handleSettings } from './settings.js';
 
 export const name = 'request-guard';
 export const inject = ['webServer'];
@@ -39,6 +40,19 @@ const DEFAULTS = Object.freeze({
 
 /** pairing/adjacency failure texts that stage B can actually fix. */
 const PAIRING_FAILURE = /tool[_ ]?calls?|tool_use|tool_result|toolCallId|tool messages?/i;
+
+
+/**
+ * Settings surface (Web UI). Persisted at ~/.dsh/request-guard/config.json and
+ * overlaid onto the live cfg at boot and after every save.
+ */
+export const SETTINGS_FIELDS = Object.freeze([
+    { key: 'enabled', type: 'boolean', label: '总开关', hint: '关掉后三层防护全部直通：不改请求、不改流、不重试。' },
+    { key: 'repairRequests', type: 'boolean', label: '修复请求', hint: 'stage A：发送前修复工具调用 id 与相邻性。' },
+    { key: 'healOnRetry', type: 'boolean', label: '重试自愈', hint: 'stage B：对可修复的失败文本自动重试一次。' },
+    { key: 'maxHealsPerTurn', type: 'number', min: 0, max: 10, label: '每轮自愈上限', hint: '0 = 不自动重试。' },
+    { key: 'idPrefix', type: 'string', maxLength: 40, label: 'id 前缀', hint: '修复出来的 tool_call id 统一前缀。' },
+]);
 
 export function apply(ctx, config = {}) {
     const cfg = {
@@ -154,6 +168,13 @@ export function apply(ctx, config = {}) {
                 sendJson(res, 500, { ok: false, error: 'stats request failed' });
             }
         };
+        overlayStored('request-guard', SETTINGS_FIELDS, cfg);
+        ctx.effect(() => ctx.webServer.register({
+            kind: 'exact',
+            path: '/api/request-guard/config',
+            handler: (req, res) => handleSettings('request-guard', SETTINGS_FIELDS, cfg, req, res),
+        }), 'request-guard: settings');
+
         return ctx.webServer.register({ kind: 'prefix', path: '/request-guard', handler });
     }, 'request-guard: stats API');
 }

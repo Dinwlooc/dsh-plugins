@@ -12,7 +12,7 @@
 #
 # The preset's plugin list mirrors the shipped `standard` preset of this DSH build
 # (app.asar → dsh/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml,
-# DSH 0.2.1-rc.2) with these deviations: the persona rules, two skill roots (Godot +
+# DSH 0.2.2-rc.1) with these deviations: the persona rules, two skill roots (Godot +
 # the harness-skills copy at dsh-plugins/harness-skills), the registry selection, `tool-plugin-manager`
 # enabled (owner 2026-10-26: creation-mode permissions, since preset `cordis` cannot mount
 # its delegation tools), and `tool-plugin-market` enabled (owner 2026-10-27: the Host now
@@ -20,7 +20,7 @@
 # diff this list against that file — a renamed or removed plugin package fails the preset at activation.
 #
 # Host-half behaviour (all discovered, nothing version-pinned):
-#   - Tool-surface policy is MODEL-DEPENDENT (Owner 2026-10-25): strictly appenditive
+#   - Tool-surface policy is MODEL-DEPENDENT : strictly appenditive
 #     context models (Deepseek) must not evict tools mid-session — slimming should pin
 #     the surface via preload/core at session start; rolling deferred+search is for
 #     models like glm that tolerate swap-in/out. Choose at session start, not runtime.
@@ -66,43 +66,25 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              prefix: "本会话模型：{{model}}。"
+              prefix: "Model for this session: {{model}}."
               # 0.2.1-rc.2 起 cwd 不再是注册的提示词变量（注册的只剩 provider/model），
               # 工作目录改由 working-directory 服务的运行时上下文提供——模板里写 {{cwd}} 会让整轮渲染失败。
+              # 系统注入一律英文：与工具说明、运行时上下文同一语言，避免中英混排。
               suffix: |
-                上位规则
+                Governing rules: the project AGENTS.md and the tool-constraint docs are the top authority; this block does not restate them — on conflict the project file wins.
 
-                项目 AGENTS.md 与工具约束文档是最高准则：任务类型、预算、上下文卫生、启动模式与工具限制均以其为准。本段不复述其内容；冲突时以项目文件优先。
+                Working style: read before you write, close small loops; re-read independently before delivery, and never claim more than the evidence shows.
 
-                职责
+                Plugin authoring: write the bundle in the workspace, then install it with `plugin_manager` (approval required per call); never hand-edit the profile's package.json / cordis.patch.yml.
 
-                对改动结果负责：先建立事实再写入，交付前独立回读验证。保持设计、实现、验证一致；保护既有场景、脚本与资源，破坏性操作先说明再执行。交付时说明改了什么、验证了什么、还有哪些假设。
+                Environment: the session is bound to a running Godot editor, which owns the scenes and assets; editor, run, and selection states are snapshots — re-check before writing; visual and runtime conclusions need a screenshot or log, otherwise state they are unverified.
 
-                方法
-
-                先读后改：确认编辑器、项目、场景与脚本现状后再动手；工具名与参数以当前 schema 为准，不猜不编。小步闭环：小批量写入后立即读回；失败先定位最早根因，再走完整路径，同类失败不堆叠重试。最短路径：简单任务少探测、少子代理、不重复读同一内容；能用现有模式就不造新机制。
-
-                本模式提供
-
-                MCP 直连运行中的 Godot 编辑器：工具族 mcp__godot-ai__*，常见 {op, params, session_id} 形式，无 run_code/PTC 包装层。按需加载的 Godot 技能（编辑器编排、场景/脚本/UI/资源/动画/音频/多人/导出等）与两个工作流模板（2D 骨架、菜单/HUD/暂停）。状态芯片与诊断卡只观测，不改变工具面。
-
-                插件创作（DSH 侧）：`plugin_manager` 负责安装/启停 bundle，安装用 install_bundle + 包目录绝对路径；`cordis-plugin-development`、`editing-cordis-compositions`、`cordis-composition-reference`、`agent-experience` 四个技能给出包结构、patch 方言与验证方式。创作路径是「工作区里写普通文件 → plugin_manager 安装」：不要手改 profile 的 package.json / cordis.patch.yml，也不要在 profile 目录跑 pnpm。plugin_manager 每次调用都需要审批。
-
-                Godot 环境特征
-
-                会话绑定一个运行中的编辑器（Addon + godot-ai MCP）；场景、脚本、资源由编辑器持有，改动经编辑器接口完成，所有权与 UID 保持清晰。编辑器状态、运行状态与选择都是快照：写入前复查，运行或导入期间不基于陈旧快照下结论。视觉与运行结论需要证据（截图、日志或状态回读）；无证据就说明未验证。未连接编辑器时只给安装/启用步骤，不臆造项目状态。
-
-                项目文件操作分工
-
-                本模式注册 `project_files` 工具：`find` 做类型感知的项目文件检索（默认滤 .uid/.import/.godot 噪声，支持 type 分类与 meta-md 论文检索）；`delete` 把文件移入系统回收站（带根禁闭、保护清单与 res:// 引用拦截）。`filesystem_manage` 没有可靠的删除能力（其 remove 的全项目发现护栏可被无关大资源锁死）——项目文件删除一律用 `project_files delete`；move/rename/reimport/read 用 `filesystem_manage`。
-
-                本段只写义务、方法与环境事实；玩法、架构、代码风格与具体做法由任务、项目规则和技能内容决定。
-
-          # ---- 以下清单逐字取自 DSH 0.2.1-rc.2 的 standard preset，仅 skill-filesystem 一行按本插件所在路径配置 ----
+          # ---- 以下清单按 DSH 0.2.2-rc.1 的 standard preset 对齐，仅 skill-filesystem 一行按本插件所在路径配置 ----
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
               maxBytes: 65536
+            disabled: true
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash
@@ -119,8 +101,10 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          # Owner 2026-11-06：无定时任务需求，停用（定时任务只在 Owner 明确要求时建）。
           - id: tool-schedule
             name: '@deepseek-ai/dsh-tool-schedule'
+            disabled: true
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
             config:
@@ -129,13 +113,15 @@
               # process 不可用 → skill-filesystem 挂载抛错，preset 激活链下游全灭
               # （新会话开不出 subagent、budget-watch 预警失效）。已回退字面量恢复功能；
               # 解耦待用受支持机制重做（TODO：向 vendor 确认 env/cwd 服务后迁移）。
-              bundledSkillDir: D:/游戏开发/项目/工程/dsh-plugins/godot-creator/skills
+              # 只挂合并后的单条技能：裸目录下 12 个领域技能已并入 sections/，
+              # 指向子目录后它们不再各自成为技能条目（省目录上下文；旧文件留待清理）。
+              bundledSkillDir: D:/游戏开发/项目/NFN Card/dsh-plugins/godot-creator/skills/godot-ai-orchestration
               # 创造模式技能根（owner 2026-10-26）：DSH 自带技能的项目内副本，逐字取自
               # app.asar 的 @deepseek-ai/dsh-agent-preset/skills（0.2.1-rc.3）。
               # 用项目副本而非 asar 路径：副本缺失时只少技能，不至于让 preset 激活失败。
               # 刷新方式见 dsh-plugins/harness-skills/PROVENANCE.md。
               customSkillDirs:
-                - D:/游戏开发/项目/工程/dsh-plugins/harness-skills
+                - D:/游戏开发/项目/NFN Card/dsh-plugins/harness-skills
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: command-goal
@@ -148,8 +134,10 @@
             isolate:
               planMode: true
             config:
+              # Owner 2026-11-06：plan mode / exit_plan_mode 目前不用，停用观察。
               - id: plan-mode
                 name: '@deepseek-ai/dsh-plan-mode'
+                disabled: true
                 config:
                   section: |
                     You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
@@ -168,14 +156,18 @@
             group: true
             isolate:
               compaction: true
+              toolResultPruner: true
             config:
               - id: compaction-basic
                 name: '@deepseek-ai/dsh-compaction-basic'
-                config:
-                  # 强制重启线：上下文到 25% 就压缩清场（默认 0.8）。
-                  thresholdRatio: 0.25
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
           - id: delegation
             name: cordis:group
             group: true
@@ -184,39 +176,55 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              # 0.2.2 起 list_agents 由 tool-subagent-control 主入口注册；
+              # `dsh-tool-subagent-control/list-agents` 子路径已移除，保留会令 preset 激活时找不到模块。
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
+              # Owner 2026-11-06：fork 无使用场景，停用；spawn 型 subagent 与 list_agents 保留。
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
                 config:
                   provider: fork
                   toolName: subagent_fork
               # OL1H 呼叫通道（0017 §8）：spawn 型 `subagent`（@deepseek-ai/dsh-subagent）与
               # `subagent-model-selection-settings` 由 **profile 层全局声明**，此处不得重复
               # 挂载——service 重复注册会报错。白名单（deepseek-flash 等）也在 profile 层。
+              # Owner 2026-11-06：硬门是单 H（同一 subagentId 全程复用），并行编排通道停用。
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
+                disabled: true
                 config:
                   provider: spawn
               - id: tool-workflow
                 name: '@deepseek-ai/dsh-tool-workflow'
+                disabled: true
+          # Owner 2026-11-06：改为完成一轮后统一决策，过程中不再问；ask_user_question 停用。
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
+            disabled: true
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
             config:
               allowParallelInProgress: true
+          # Owner 2026-11-06：只留 web_fetch；web_search 停用（检索需求走 pwsh 的 npm search）。
           - id: tool-web
             name: '@deepseek-ai/dsh-tool-web'
             config:
+              search: false
               fetch: true
               searchTimeoutMs: 60000
+          # PTC 工具面：PTC 能力由**预设作用域**直接挂 PTC 执行器拥有。
+          # 0.2.2 起 `tool-presentation` 已弃用，`tools.mode` 已移除；按 Agent 作用域直接挂
+          # `dsh-tool-executor-ptc` 是当前受支持接法。base bundle 已在全局挂 native 执行器，
+          # 此处把本预设作用域覆盖为 PTC，旧会话不会被中途切换工具面。
+          - id: godot-tool-executor-ptc
+            name: '@deepseek-ai/dsh-tool-executor-ptc'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           # 创造模式权限（owner 2026-10-26）：plugin_manager 是本 profile 唯一的插件安装/启停
@@ -225,9 +233,10 @@
           # 守卫抛错会让整个 preset 激活失败（新会话开不出来）。
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
-          # plugin-market 现由 profile 的 @deepseek-ai/dsh-experimental-plugin-market-bundle
-          # 提供 Host 服务（0.2.1-rc.3，安装自带）；此处挂工具行，不再固定关闭
-          # （Owner 2026-10-27：清理预设里残留的旧插件市场开关）。
+          # 插件市场：宿主服务由 profile 的 @deepseek-ai/dsh-experimental-plugin-market-bundle 提供。
+          # 该 bundle 的宿主行带 !!js 守卫（取不到 profileContext 时自关），且版本门会挡旧 peer：
+          # 已用 set_version_exemption 放行 @deepseek-ai/dsh-plugin-market@0.2.1-rc.3 → 运行时 rc.5。
+          # 此处只挂模型面工具行；宿主服务没挂载时该工具不会出现（工具随服务启停，是 bundle 的设计）。
           - id: tool-plugin-market
             name: '@deepseek-ai/dsh-plugin-market/tools'
 

@@ -1,0 +1,10 @@
+# Host half only: the plugin serves /release-notes/api/report and registers no tool.
+# The panel lives in the Client half (client.js), declared through package.json's dsh.client.
+#
+# 必须用 insert:（不是裸 - id: 覆写）。裸 - id: 只是给一个「已存在的行」打补丁：
+# 没有同 id 的行时，加载器只记一条 override、不产生 row —— 结果是 bundle 显示 installed/enabled，
+# 但 profile 里没有宿主 entry，于是宿主路由与客户端模块都不存在，GUI 永远看不到面板，
+# 重启也不会好。（2026-10-30 实测：rows:[] + overrides:['dsh-release-notes']）
+- insert:
+    - id: release-notes
+      name: 'dsh-release-notes'

@@ -1,0 +1,6 @@
+# Host-only bundle: registers five model-facing tools through ctx.tools.
+# `insert:` is required. A bare `- id:` only patches an existing row and produces none,
+# which shows as installed but leaves no host entry (no tools, no diff).
+- insert:
+    - id: file-ops
+      name: 'dsh-file-ops'

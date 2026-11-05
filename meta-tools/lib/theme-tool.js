@@ -1,8 +1,8 @@
 /**
  * meta_theme — view/switch the meta-library theme preset.
  *
- * One operation, two callers (user-actions rule): the Settings UI card calls the
- * SAME ops via the plugin's HTTP route (/api/meta-tools/theme), and the agent
+ * One operation, two callers (user-actions rule): the Meta-tools settings column
+ * calls the SAME ops via the plugin's HTTP route (/api/meta-tools/config), and the agent
  * calls them through this tool. `set` mutates the volatile cell in place — the
  * live effect matches the dsh Settings toggle; persistence across restart stays
  * with dsh Settings / patch config (identical to Settings).

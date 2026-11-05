@@ -1,0 +1,36 @@
+{
+  "name": "dsh-file-ops",
+  "version": "0.1.0",
+  "description": "Structured text operations over one file or a whole tree — whole-word replace across a tree, block copy/move/swap, and paged sentence lookup. Every write goes through the host read/write/edit tools, so each edit renders as a GUI diff and passes the tool guard.",
+  "author": "Dinwlooc",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "file-ops",
+    "diff",
+    "text-blocks",
+    "bulk-replace"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

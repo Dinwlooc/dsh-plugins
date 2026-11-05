@@ -1,0 +1,40 @@
+{
+  "name": "dsh-prompt-trim",
+  "version": "0.1.0",
+  "description": "Empty-text shadow for shipped system-prompt sections that tool schemas and tool results already carry: drops ~760 tokens of per-turn prompt weight in the godot-creator preset.",
+  "author": "Dinwlooc",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "system-prompt",
+    "context-budget",
+    "prompt-sections",
+    "agent-preset"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./client": {
+      "default": "./client.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "client.js",
+    "settings.js"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "external": []
+    }
+  }
+}

@@ -1,45 +1,62 @@
 {
-  "name": "dsh-meta-tools",
-  "version": "0.2.0",
-  "description": "Meta-layer library tools for DeepSeek Harness: route, read/write/search/guard-delete a workspace prompt & knowledge library keyed by model and task type",
-  "author": "Dinwlooc",
-  "license": "MIT",
-  "keywords": [
-    "dsh-plugin",
-    "meta-layer",
-    "routing",
-    "knowledge-library",
-    "revlog",
-    "task-types"
-  ],
+    "name": "dsh-meta-tools",
+    "version": "0.5.0",
+    "description": "Integrated meta-library tools for DeepSeek Harness: routing + cold-start plan + provisioning, revision signing, task-type registry, model-identity aliases, theme presets, prompt injection for the main agent and for delegated children (configurable meta/SUBAGENTS.md), and a vendored tool-search disclosure engine with a session-frozen catalog",
+    "author": "Dinwlooc",
+    "license": "MIT",
+    "keywords": [
+        "dsh-plugin",
+        "meta-layer",
+        "routing",
+        "knowledge-library",
+        "revlog",
+        "task-types",
+        "tool-search",
+        "tool-slimming",
+        "progressive-disclosure"
+    ],
     "type": "module",
-  "main": "lib/index.js",
-  "dependencies": {
-    "@deepseek-ai/schemastery": "3.18.5",
-    "@deepseek-ai/cosmokit": "~1.8.6"
-  },
-  "exports": {
-    ".": "./lib/index.js",
-    "./client": "./lib/client.js",
-    "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "lib/**/*.js",
-    "cordis.patch.yml",
-    "locale/*.json",
-    "icon.svg",
-    "README.md",
-    "LICENSE"
-  ],
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
+    "main": "lib/index.js",
+    "scripts": {
+        "test": "node --import ./test/host-hooks.mjs test/run.mjs && node --import ./test/host-hooks.mjs test/tool-search.test.mjs"
     },
-    "client": {
-      "platform": "web",
-      "external": []
+    "dependencies": {
+        "@deepseek-ai/schemastery": "3.18.5",
+        "@deepseek-ai/cosmokit": "~1.8.6"
+    },
+    "peerDependencies": {
+        "@deepseek-ai/dsh-llm": "^0.2.1-rc.2 || ^0.2.2-rc.1",
+        "@deepseek-ai/dsh-tools": "^0.2.1-rc.2 || ^0.2.2-rc.1",
+        "@deepseek-ai/dsh-tool-executor-ptc": "^0.2.2-rc.1"
+    },
+    "exports": {
+        ".": "./lib/index.js",
+        "./client": "./lib/client.js",
+        "./locale/*.json": "./locale/*.json",
+        "./icon": "./icon.svg",
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "lib/**/*.js",
+        "cordis.patch.yml",
+        "locale/*.json",
+        "icon.svg",
+        "README.md",
+        "LICENSE",
+        "LICENSE.upstream"
+    ],
+    "dsh": {
+        "bundle": {
+            "patch": "./cordis.patch.yml"
+        },
+        "client": {
+            "platform": "web",
+            "external": []
+        }
+    },
+    "peerDependenciesMeta": {
+        "@deepseek-ai/dsh-tool-executor-ptc": {
+            "optional": true
+        }
     }
-  }
 }

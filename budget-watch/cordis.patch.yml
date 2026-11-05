@@ -8,5 +8,9 @@
       name: 'dsh-budget-watch'
       config:
         enabled: true
-        thresholds: [0.8]
+        thresholds: [0.6, 1.0]
         remindUnregistered: false
+        # 自动发放：新会话登记 100k；超量后连续两轮无新登记，下一轮开头再登记 100k。
+        # 阈值：60% 压缩步数提醒，100% 中止文件输出提醒。
+        autoRegister: true
+        autoRegisterTokens: 100000

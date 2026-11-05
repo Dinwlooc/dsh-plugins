@@ -1,9 +1,8 @@
 ---
 name: godot-ai-orchestration
-description: "直连 MCP 操控 Godot 编辑器：会话发现、工具路由、批量写入、运行、输入与截图验收。任何编辑器写入/运行/验收任务先加载。"
+description: "Load before any Godot editor write, run, or acceptance task: MCP session discovery, tool routing, batch writes, run + log + screenshot verification. Also indexes the domain sections (gdscript, nodes/scenes, ui, shaders, animation, audio, resources, signals, multiplayer, csharp, export, workflows) so they cost no catalog space."
 verified-against: godot-ai 4.3.0 / Godot 4.7.2 / MCP 2025-06-18
 ---
-
 # Godot AI 编排
 
 编辑器是事实来源，本技能是控制协议。工具直连 `mcp__godot-ai__*`，无包装层；工具名与参数一律以当前 schema 为准，不凭记忆编造。
@@ -43,3 +42,21 @@ verified-against: godot-ai 4.3.0 / Godot 4.7.2 / MCP 2025-06-18
 ## 失败恢复
 
 记录已完成副作用与最后一个已验证点，先修首个根因，不在未知状态重放整批。
+## 领域分节（按需读，不再各自占一条技能目录）
+
+以下是原 12 个独立技能的正文，已收进本技能的 `sections/`。读完本节再按需要读对应文件；不读不占上下文。
+
+| 分节 | 何时读 |
+|---|---|
+| `sections/godot-gdscript.md` | 写/改 `.gd`：静态类型、生命周期、注解、await、诊断 |
+| `sections/godot-nodes-scenes.md` | 搭/改场景树：节点组合、PackedScene、实例化、owner |
+| `sections/godot-ui-control.md` | 做 UI/HUD：anchors、Container、Theme、焦点、响应式 |
+| `sections/godot-signals-groups.md` | 解耦通信：signal 连接/断开、groups 广播 |
+| `sections/godot-resources.md` | 自定义 Resource / `.tres` 数据驱动、UID |
+| `sections/godot-animation.md` | AnimationPlayer/AnimationTree/Tween 轨道与混合 |
+| `sections/godot-shaders.md` | 写 canvas_item/spatial shader、材质 uniform |
+| `sections/godot-audio.md` | 音频播放器、bus、2D/3D 衰减 |
+| `sections/godot-multiplayer.md` | 多人：authority、RPC、Spawner/Synchronizer |
+| `sections/godot-csharp.md` | C#/.NET：生命周期、导出、signal、GDScript 互操作 |
+| `sections/godot-export.md` | 导出 preset、模板、平台权限、headless |
+| `sections/godot-creator-workflows.md` | 创作流程模板索引（2D 骨架、菜单/HUD/暂停） |

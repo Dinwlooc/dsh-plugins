@@ -1,0 +1,48 @@
+{
+  "name": "dsh-release-notes",
+  "version": "0.2.0",
+  "description": "Read-only DSH release notes as a Web GUI panel: compares the running build with the newest published release and lists the notes between them. Registers no model tool; no install, no restart, 30-minute cache.",
+  "author": "Dinwlooc",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "release-notes",
+    "changelog",
+    "version-tracking",
+    "gui"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "locale/*.json",
+    "settings.js"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

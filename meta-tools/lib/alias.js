@@ -14,16 +14,19 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { libRoot, normalizeAliases, resolveModelIdentity, resolveRootCfg } from "./library.js";
+import { MESSAGES, render as fill } from "./messages.js";
 
 const fail = (code, extra = {}) => ({ code, ...extra });
 
 function render(args, value) {
-    if (value.code !== "OK") return [{ type: "text", text: `meta_alias ${value.code}` }];
+    if (value.code !== "OK") return [{ type: "text", text: fill(MESSAGES.aliasError, { code: value.code }) }];
     const rows = Object.entries(value.modelAliases ?? {}).map(([from, to]) => `${from} -> ${to}`);
     const body = rows.length > 0 ? rows.join(", ") : "(none)";
     const action = args?.action ?? "list";
-    if (action === "list") return [{ type: "text", text: `meta_alias: ${body}` }];
-    return [{ type: "text", text: `meta_alias ${action}: ${value.changed} | ${body}${value.warning ? ` | ${value.warning}` : ""}` }];
+    if (action === "list") return [{ type: "text", text: fill(MESSAGES.aliasList, { body }) }];
+    return [{ type: "text", text: fill(MESSAGES.aliasChange, {
+        action, changed: value.changed, body, warning: value.warning ? ` | ${value.warning}` : "",
+    }) }];
 }
 
 export function createMetaAliasTool(ctx, cfg) {
@@ -59,7 +62,7 @@ export function createMetaAliasTool(ctx, cfg) {
             if (action === "list") return { code: "OK", modelAliases: current };
 
             const from = typeof args?.from === "string" ? args.from.trim() : "";
-            if (from === "") return fail("USAGE", { hint: "from is required (the raw session model id)" });
+            if (from === "") return fail("USAGE", { hint: MESSAGES.hintFromRequired });
 
             if (action === "remove") {
                 if (current[from] === undefined) return fail("USAGE", { hint: `no alias for "${from}"` });
@@ -69,8 +72,8 @@ export function createMetaAliasTool(ctx, cfg) {
             }
 
             const to = typeof args?.to === "string" ? args.to.trim() : "";
-            if (to === "") return fail("USAGE", { hint: "to is required (the identity model id whose library to reuse)" });
-            if (to === from) return fail("USAGE", { hint: "from and to are the same model — nothing to alias" });
+            if (to === "") return fail("USAGE", { hint: MESSAGES.hintToRequired });
+            if (to === from) return fail("USAGE", { hint: MESSAGES.hintSameModel });
 
             const candidate = { ...current, [from]: to };
             const resolved = resolveModelIdentity(candidate, from);

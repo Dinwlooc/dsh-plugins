@@ -1,4 +1,4 @@
-# dsh-request-guard
+# dsh-request-guard（请求护栏）
 
 **一句话**：把"一个畸形 tool-call 块搞死整条会话"这件事，在**三个层**同时堵住——写入层补 id、请求层修消息数组、错误层重试一次。
 
